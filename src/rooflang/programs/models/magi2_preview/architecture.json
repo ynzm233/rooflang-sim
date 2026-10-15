@@ -1,0 +1,404 @@
+{
+  "model_name": "MAGI-2-preview",
+  "model_type": "multimodal_audio_video_generation",
+  "indexed_weight_bytes": {
+    "preview_transformer": 228107858176,
+    "refiner_transformer": 13484611648,
+    "qwen_text": 55562872800
+  },
+  "components": [
+    {
+      "name": "qwen_text",
+      "component_type": "cpu_text_accounting",
+      "hidden_size": 5120,
+      "vocabulary_size": 248320,
+      "intermediate_size": 17408,
+      "num_layers": 64,
+      "num_full_attention_layers": 16,
+      "num_linear_attention_layers": 48,
+      "num_attention_heads": 24,
+      "num_kv_heads": 4,
+      "head_dim": 256,
+      "linear_num_key_heads": 16,
+      "linear_num_value_heads": 48,
+      "linear_key_head_dim": 128,
+      "linear_value_head_dim": 128,
+      "linear_conv_kernel_size": 4,
+      "linear_chunk_size": 64,
+      "max_tokens": 7000,
+      "weight_dtype": "bf16",
+      "recurrence_dtype": "fp32",
+      "skip_layer": 2
+    },
+    {
+      "name": "condition_broadcast",
+      "component_type": "condition_broadcast",
+      "hidden_size": 5120,
+      "layer_blocks": [
+        {
+          "repeat_times": 1,
+          "layers": [
+            {
+              "id": "condition_broadcast",
+              "blocks": [
+                {
+                  "type": "magi2-condition-broadcast"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "text_dim": 5120,
+      "video_dim": 48,
+      "text_dtype": "bf16",
+      "video_dtype": "fp32"
+    },
+    {
+      "name": "image_vae_encoder",
+      "component_type": "visual_condition_encoder",
+      "hidden_size": 640,
+      "layer_blocks": [
+        {
+          "repeat_times": 1,
+          "layers": [
+            {
+              "id": "image_vae_encoder",
+              "blocks": [
+                {
+                  "type": "magi2-image-vae-encoder"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "latent_channels": 48,
+      "input_channels": 12,
+      "pixel_patch_size": 2,
+      "spatial_stride": 16,
+      "base_channels": 160,
+      "channel_multipliers": [
+        1,
+        2,
+        4,
+        4
+      ],
+      "num_res_blocks": 2,
+      "temporal_downsample_levels": [
+        1,
+        2
+      ],
+      "weight_dtype": "fp32",
+      "resident_parameters": {
+        "encoder": 149627776,
+        "decoder": 555049228,
+        "bottleneck": 11664
+      },
+      "resident_scope": "full Wan VAE on every rank, including T2V"
+    },
+    {
+      "name": "preview_transformer",
+      "component_type": "dit_preview",
+      "hidden_size": 3072,
+      "num_layers": 40,
+      "layer_blocks": [
+        {
+          "repeat_times": 1,
+          "layers": [
+            {
+              "id": "preview_input",
+              "blocks": [
+                {
+                  "type": "magi2-preview-io",
+                  "position": "input"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "repeat_times": 40,
+          "layers": [
+            {
+              "id": "preview_layer",
+              "blocks": [
+                {
+                  "type": "magi2-preview-layer",
+                  "layer_index_strategy": "model_minus_offset",
+                  "layer_index_offset": 1
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "repeat_times": 1,
+          "layers": [
+            {
+              "id": "preview_output",
+              "blocks": [
+                {
+                  "type": "magi2-preview-io",
+                  "position": "output"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "text_dim": 5120,
+      "video_dim": 48,
+      "audio_dim": 64,
+      "weight_dtype": "bf16",
+      "norm_dtype": "fp32",
+      "attention_dtype": "bf16",
+      "adapter_dtype": "fp32",
+      "modality_banks": 3,
+      "fourier_dim": 128,
+      "time_dim": 64,
+      "num_attention_heads": 24,
+      "num_kv_heads": 24,
+      "head_dim": 128,
+      "intermediate_size": 8192,
+      "num_moe_heads": 12,
+      "experts_per_head": 256,
+      "experts_per_token": 6,
+      "expert_head_dim": 256,
+      "expert_hidden_size": 1280,
+      "num_shared_experts": 2,
+      "mhc_multiplier": 4,
+      "mhc_sinkhorn_iterations": 20,
+      "modality_bank_layers": [
+        0,
+        1,
+        38,
+        39
+      ],
+      "dense_ffn_layers": [
+        0,
+        1,
+        38,
+        39
+      ],
+      "router_dtype": "fp32",
+      "preview_latent_frames": 32,
+      "audio_latent_frames": 250,
+      "sequence_alignment": 48
+    },
+    {
+      "name": "latent_upsample",
+      "component_type": "latent_resize",
+      "hidden_size": 48,
+      "weight_dtype": "fp32",
+      "mode": "trilinear",
+      "align_corners": true,
+      "layer_blocks": [
+        {
+          "repeat_times": 1,
+          "layers": [
+            {
+              "id": "latent_upsample",
+              "blocks": [
+                {
+                  "type": "magi2-latent-upsample"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "refiner_transformer",
+      "component_type": "dit_refiner",
+      "hidden_size": 4096,
+      "num_layers": 30,
+      "layer_blocks": [
+        {
+          "repeat_times": 1,
+          "layers": [
+            {
+              "id": "refiner_input",
+              "blocks": [
+                {
+                  "type": "magi2-refiner-io",
+                  "position": "input"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "repeat_times": 30,
+          "layers": [
+            {
+              "id": "refiner_layer",
+              "blocks": [
+                {
+                  "type": "magi2-refiner-layer",
+                  "layer_index_strategy": "model_minus_offset",
+                  "layer_index_offset": 1
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "repeat_times": 1,
+          "layers": [
+            {
+              "id": "refiner_output",
+              "blocks": [
+                {
+                  "type": "magi2-refiner-io",
+                  "position": "output"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "text_dim": 5120,
+      "video_dim": 48,
+      "audio_dim": 64,
+      "weight_dtype": "bf16",
+      "norm_dtype": "fp32",
+      "attention_dtype": "bf16",
+      "adapter_dtype": "fp32",
+      "modality_banks": 3,
+      "fourier_dim": 128,
+      "time_dim": 64,
+      "num_attention_heads": 32,
+      "num_kv_heads": 8,
+      "head_dim": 128,
+      "intermediate_size": 10920,
+      "modality_bank_layers": [
+        0,
+        1,
+        28,
+        29
+      ],
+      "window_block_shape": [
+        8,
+        4,
+        4
+      ],
+      "window_radius": 2,
+      "latent_frames": 63
+    },
+    {
+      "name": "video_vae_decoder",
+      "component_type": "vae_decoder_video",
+      "hidden_size": 384,
+      "layer_blocks": [
+        {
+          "repeat_times": 1,
+          "layers": [
+            {
+              "id": "video_vae_decoder",
+              "blocks": [
+                {
+                  "type": "magi2-turbo-vae-decoder"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "latent_channels": 48,
+      "base_channels": 512,
+      "channels": [
+        512,
+        256,
+        128,
+        64
+      ],
+      "mid_res_blocks": 3,
+      "res_blocks": [
+        3,
+        2,
+        2,
+        2
+      ],
+      "temporal_upsample_levels": [
+        0,
+        1
+      ],
+      "spatial_upsample_levels": [
+        0,
+        1,
+        2
+      ],
+      "modified_residual_levels": [
+        0,
+        1,
+        2
+      ],
+      "output_channels": 12,
+      "pixel_patch_size": 2,
+      "spatial_stride": 16,
+      "temporal_stride": 4,
+      "window_first": 7,
+      "window_step": 7,
+      "weight_dtype": "bf16",
+      "resident_parameters": {
+        "decoder": 107122892
+      },
+      "resident_scope": "Turbo decoder on leader only"
+    },
+    {
+      "name": "audio_vae_decoder",
+      "component_type": "vae_decoder_audio",
+      "hidden_size": 2048,
+      "layer_blocks": [
+        {
+          "repeat_times": 1,
+          "layers": [
+            {
+              "id": "audio_vae_decoder",
+              "blocks": [
+                {
+                  "type": "magi2-audio-vae-decoder"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "latent_channels": 64,
+      "base_channels": 2048,
+      "channels": [
+        1024,
+        512,
+        256,
+        128,
+        128
+      ],
+      "strides": [
+        8,
+        8,
+        4,
+        4,
+        2
+      ],
+      "residual_dilations": [
+        1,
+        3,
+        9
+      ],
+      "input_kernel_size": 7,
+      "residual_kernel_size": 7,
+      "output_channels": 2,
+      "output_kernel_size": 7,
+      "weight_dtype": "fp32",
+      "output_samples_per_latent": 1764,
+      "resident_parameters": {
+        "encoder": 77989888,
+        "decoder": 78122626,
+        "materialized_decoder_weight": 78055168
+      },
+      "resident_scope": "full audio VAE on leader, plus warm weight_norm materialized decoder tensors"
+    }
+  ]
+}

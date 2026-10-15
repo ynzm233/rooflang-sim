@@ -1,0 +1,200 @@
+{
+  "reference_repository": "Markov_Infer_Sim",
+  "reference_revision": "f27d4bdfa823fe0b151749cc5d1e1d734e7fb583",
+  "reference_working_tree_note": "File hashes identify the exact source bytes, including any local changes beyond the revision.",
+  "official_magi_source_revision": "f68a0f9",
+  "recorded_date": "2026-09-22",
+  "adaptations": "Isolated parameter/precision descriptions and exact cost formulas. Imports point only to local modules; registry has no hardware backend; Markov graph execution and timing are excluded.",
+  "files": [
+    {
+      "local": "_cost/all_gather.py",
+      "source": "src/oplens/operators/communicate/all_gather.py",
+      "source_sha256": "8e121b94a55eb015e77a41651822beeb90d0c2204a6d7dd6d3b5b4e4d0857b7f"
+    },
+    {
+      "local": "_cost/all_reduce.py",
+      "source": "src/oplens/operators/communicate/all_reduce.py",
+      "source_sha256": "4c01f0d39261704e4881d3f818f513d5c81b64fb4496ac04b8f97af8ff2016c3"
+    },
+    {
+      "local": "_cost/all_to_all.py",
+      "source": "src/oplens/operators/communicate/all_to_all.py",
+      "source_sha256": "bc8ed741faf6288c62e112b69341e4d40048dbd0b241e893de3070ceb7925870"
+    },
+    {
+      "local": "_cost/base_comm.py",
+      "source": "src/oplens/operators/communicate/base_comm.py",
+      "source_sha256": "223b5d5adda5f09feb448ac5416aab95ef63dc329691e8df048e711b4097612d"
+    },
+    {
+      "local": "_cost/common_func.py",
+      "source": "src/oplens/operators/communicate/common_func.py",
+      "source_sha256": "144752046dfa22aa2b8177a2ee330ecd0b74d03d1bd85a9d672862eb111fc795"
+    },
+    {
+      "local": "_cost/conv1d.py",
+      "source": "src/oplens/operators/compute/cube/conv1d.py",
+      "source_sha256": "8c736da29576264fa685af6da73482bbf6ee49c977daac843819c169bdc9f97f"
+    },
+    {
+      "local": "_cost/conv3d.py",
+      "source": "src/oplens/operators/compute/cube/conv3d.py",
+      "source_sha256": "a9fb4c4cb1c8c58f9decc629ae01f4efc0f8583e0e992213a159c647e9231852"
+    },
+    {
+      "local": "_cost/conv_transpose1d.py",
+      "source": "src/oplens/operators/compute/cube/conv_transpose1d.py",
+      "source_sha256": "d9669635d092affc47f7ab2d27c660aa235e2789edb453b5b086649513c29ea6"
+    },
+    {
+      "local": "_cost/element_wise.py",
+      "source": "src/oplens/operators/compute/vector/element_wise.py",
+      "source_sha256": "527d9608c22b054339b0be5b57884592d89df69f0944677ab7320370a1c668a1"
+    },
+    {
+      "local": "_cost/feature_transform.py",
+      "source": "src/oplens/operators/compute/vector/feature_transform.py",
+      "source_sha256": "c04f98503356126af65a7d503e1eef4dcace658e16531ba008b5a5a7a2bba532"
+    },
+    {
+      "local": "_cost/flash_attention.py",
+      "source": "src/oplens/operators/compute/cube/flash_attention.py",
+      "source_sha256": "470b7e392310e2f6e09889df1ad137c3ad9e6cd66cebfc7e8abb47b36865c283"
+    },
+    {
+      "local": "_cost/flash_attention_sink.py",
+      "source": "src/oplens/operators/compute/cube/flash_attention_sink.py",
+      "source_sha256": "1b28daf8c53452899dfd50b1c3208e7e03c785b92875aac3dcc1aefc521a354a"
+    },
+    {
+      "local": "_cost/flash_mh_moe.py",
+      "source": "src/oplens/operators/compute/cube/flash_mh_moe.py",
+      "source_sha256": "141a6549d8e83c048a7e953b59dad403154e22fdf19a7fae08e75fc1ebd50660"
+    },
+    {
+      "local": "_cost/groupmatmul.py",
+      "source": "src/oplens/operators/compute/cube/groupmatmul.py",
+      "source_sha256": "307ca59104646ee24b746a8ba2b89489258357b71845fb1407f10cf3b3f10769"
+    },
+    {
+      "local": "_cost/interpolate.py",
+      "source": "src/oplens/operators/compute/vector/interpolate.py",
+      "source_sha256": "cee1f1b6155eaaac745e615bc04b612db00e41975a52507dcc0813e6c6944fd0"
+    },
+    {
+      "local": "_cost/matmul.py",
+      "source": "src/oplens/operators/compute/cube/matmul.py",
+      "source_sha256": "b3e807085d3aac22fb200cdebec366ee34105b1da4cfa2ca970164f06e6d82b0"
+    },
+    {
+      "local": "_cost/mhc.py",
+      "source": "src/oplens/operators/compute/vector/mhc.py",
+      "source_sha256": "a7f408da12bc9197714b844cc508a13f2e8bca362988fea0e5579a9c4e4014b5"
+    },
+    {
+      "local": "_cost/mhc_post.py",
+      "source": "src/oplens/operators/compute/cube/mhc_post.py",
+      "source_sha256": "d41030deb533111bd2c7b01e5f3bd62334609a7673ee5513b823a160e088817d"
+    },
+    {
+      "local": "_cost/moe_routing.py",
+      "source": "src/oplens/operators/compute/vector/moe_routing.py",
+      "source_sha256": "c78ca4f8a4a6eeffe1ab3a162c9cb7b6c7bf1f6f3cfce51fdf74e0335ac3a5fa"
+    },
+    {
+      "local": "_cost/reduce_sum.py",
+      "source": "src/oplens/operators/compute/vector/reduce_sum.py",
+      "source_sha256": "64e51329d10875bc5020b5cb48abc3ac9d36e783de67c4e5aafb8e5d6d005727"
+    },
+    {
+      "local": "_cost/rmsnorm.py",
+      "source": "src/oplens/operators/compute/vector/rmsnorm.py",
+      "source_sha256": "65484cfd3a1d1cd52e57364154a0bedc70fa8a83e5c24dc2422e4a6d8ccb60f0"
+    },
+    {
+      "local": "_cost/rope.py",
+      "source": "src/oplens/operators/compute/vector/rope.py",
+      "source_sha256": "800d100e1bcc9857ced0d78f98e0a4919ce48956bb9dbcf98f623b27abff3df3"
+    },
+    {
+      "local": "_cost/sigmoid.py",
+      "source": "src/oplens/operators/compute/vector/sigmoid.py",
+      "source_sha256": "72f9e929fe3c956367c673c52c81e38deef8a1203ec4d36b258a55a3c329a275"
+    },
+    {
+      "local": "_cost/silu.py",
+      "source": "src/oplens/operators/compute/vector/silu.py",
+      "source_sha256": "326d0c20fe412ef2e9e3f02139ca34fddb13f68c84097e6b961ce29a5ec8ddaa"
+    },
+    {
+      "local": "_cost/snake_beta.py",
+      "source": "src/oplens/operators/compute/vector/snake_beta.py",
+      "source_sha256": "e29c669373388521b546f37fb292ced35038c8b17637d7c415aca835b430f99d"
+    },
+    {
+      "local": "_cost/softmax.py",
+      "source": "src/oplens/operators/compute/vector/softmax.py",
+      "source_sha256": "8a177f557d3e301fa880c04696864a4eee488f6d7765cc9559e0b2b3407d3f2a"
+    },
+    {
+      "local": "_cost/swiglu7.py",
+      "source": "src/oplens/operators/compute/vector/swiglu7.py",
+      "source_sha256": "93a3606c3c1f5592ac2479391babb8f04587570711b06e8e5d8133d384edda64"
+    },
+    {
+      "local": "_cost/tensor_move.py",
+      "source": "src/oplens/operators/compute/vector/tensor_move.py",
+      "source_sha256": "6f762a3f1db9d5bad66fd2117f95deaab9f33cdfd482d94d5d9415cbe1146b7b"
+    },
+    {
+      "local": "_cost/topk.py",
+      "source": "src/oplens/operators/compute/vector/topk.py",
+      "source_sha256": "2a7d46cca3b2097e4e612dd126fed005803cbc61dd4c66a1dae5780120807c42"
+    },
+    {
+      "local": "_cost/tree_broadcast.py",
+      "source": "src/oplens/operators/communicate/tree_broadcast.py",
+      "source_sha256": "4d5fad96cf8034235e8c50cb28803004a9f91ae3a22a8050b83d419ed45fdbcf"
+    },
+    {
+      "local": "_cost/utils.py",
+      "source": "src/oplens/operators/compute/cube/utils.py",
+      "source_sha256": "a1ce8cfb265aca3cfc3b6f45596de2809d32ceb0134fb41c8bc40df9dd878d02"
+    },
+    {
+      "local": "blocks.py",
+      "source": "src/models/blocks/magi2_blocks.py",
+      "source_sha256": "8c05ce922b9dd959c511d818355e54cd20319c109f6a3f2d1467a5a2c832e5f9"
+    },
+    {
+      "local": "codec_blocks.py",
+      "source": "src/models/blocks/magi2_codec_blocks.py",
+      "source_sha256": "38940d52c3d0bd40061f41bad189126d0fca764037b8eb41d0e6cd3d930325e4"
+    },
+    {
+      "local": "_cost/core.py",
+      "source": "src/oplens/core/base.py",
+      "source_sha256": "c3ca26c98d8e668773291bd9e3bcf8643a76c49834169de0fa81514b4cad3de2"
+    },
+    {
+      "local": "_cost/core.py",
+      "source": "src/oplens/core/params.py",
+      "source_sha256": "ca6bad438af3403291e1c9e3ba1084860eac566d3f776acf1a4db3db1b8a51b5"
+    },
+    {
+      "local": "_cost/core.py",
+      "source": "src/oplens/core/precision.py",
+      "source_sha256": "c9d4ae8322dbefc5eb5e72d3c561623993cc8ab4f047190c6d5231f758adfe42"
+    },
+    {
+      "local": "_cost/core.py",
+      "source": "src/oplens/core/registry.py",
+      "source_sha256": "a3f86a6a3e03de805c0585ff7c820cca8ec53010087b360b6954d6f141e7c741"
+    },
+    {
+      "local": "_cost/core.py",
+      "source": "src/oplens/core/composite.py",
+      "source_sha256": "4920be243f044cd6fe7064cc99e2a2b9e4319d55694e15b6926fd77a111100bd"
+    }
+  ]
+}

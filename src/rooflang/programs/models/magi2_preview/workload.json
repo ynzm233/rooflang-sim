@@ -1,0 +1,41 @@
+{
+  "type": "magi2_preview",
+  "workflow": "i2v",
+  "resolution": "1080p",
+  "seconds": 10,
+  "preview_steps": 100,
+  "refiner_steps": 5,
+  "assume_stage_unload": true,
+  "seed": 42,
+  "deterministic": false,
+  "prompt_enhancement": false,
+  "workflows": {
+    "i2v": {
+      "image_width": 2710,
+      "image_height": 1510,
+      "ref_image_type": "original",
+      "image_present": true,
+      "positive_text_tokens": 2029,
+      "image_orientation": 1
+    },
+    "t2v": {
+      "image_present": false,
+      "positive_text_tokens": 2014,
+      "image_width": 0,
+      "image_height": 0,
+      "image_orientation": 1,
+      "ref_image_type": "original"
+    }
+  },
+  "cpu_text_timing_included": false,
+  "attention_softmax_compute_multiplier": 1.0,
+  "precision_proxy": {
+    "bf16_from_fp16": 1.0,
+    "fp32_from_fp16": 0.5
+  },
+  "negative_text_tokens": 429,
+  "cp_size": 8,
+  "ep_size": 8,
+  "moe_active_experts_per_head": 256,
+  "moe_compute_amplification": 1.0
+}

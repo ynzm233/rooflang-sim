@@ -1,0 +1,74 @@
+# ====================== 芯片基础信息 ======================
+chip_name: A5_pr_server
+vendor: ascend
+chip_gen: A5
+
+# ====================== 算力建模（细粒度） ======================
+compute:
+  # Tensor Core (Cube) 算力
+  cube:
+    fp8: 972
+    fp16: 486
+    kernel_launch_us: 0 # 就按照这个默认值
+  # Vector 算力
+  vector:
+    fp8: 108
+    fp16: 54
+    kernel_launch_us: 0 # 就按照这个默认值
+
+# ====================== 存储建模 ======================
+memory:
+  hbm:
+    capacity_gb: 128
+    bandwidth_gb_s: 1600
+
+# ====================== 组网建模 ======================
+topo:
+  # 节点内（8P服务器）
+  intra_node:
+    level: 0
+    type: supernode
+    bandwidth_gb_s: 392
+    topology: clos
+    latency_us: 1
+    efficiency: 0.7
+    num: 8
+    ops_efficiency:
+      p2p:
+        2: 0.142857
+        4: 0.428571
+        8: 1.0
+      reduce_scatter:
+        0: 1
+      all_gather:
+        0: 1
+      all_reduce:
+        2: 0.142857
+        4: 0.428571
+        8: 1.0
+      all2all:
+        2: 0.142857
+        4: 0.428571
+        8: 1.0
+
+  # 节点间
+  inter_node:
+    level: 1
+    type: supernode   # roce
+    bandwidth_gb_s: 400
+    topology: clos  # clos
+    latency_us: 2.18
+    efficiency: 0.7
+    num: 128
+    must_fill: False
+    ops_efficiency:
+      p2p:
+        0: 1.0
+      reduce_scatter:
+        0: 1.0
+      all_gather:
+        0: 1.0
+      all_reduce:
+        0: 1.0
+      all2all:
+        0: 1.0

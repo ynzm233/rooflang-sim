@@ -1,0 +1,11 @@
+{
+  "rooflang": {
+    "url": "https://github.com/ynzm233/rooflang",
+    "commit": "695b239b0fd349ee08a705578893ab8fe4de1d8b"
+  },
+  "model_Sim": {
+    "url": "https://github.com/ynzm233/model-simulatin",
+    "commit": "f27d4bdfa823fe0b151749cc5d1e1d734e7fb583",
+    "scope": "MiniMax-H3 model, source cost formulas and A5 hardware parameters"
+  }
+}

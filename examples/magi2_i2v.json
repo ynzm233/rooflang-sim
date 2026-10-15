@@ -1,0 +1,8 @@
+{
+  "workflow": "i2v",
+  "resolution": "1080p",
+  "preview_steps": 100,
+  "refiner_steps": 5,
+  "cp_size": 8,
+  "ep_size": 8
+}

@@ -1,0 +1,34 @@
+workload:
+  batch_size: 1
+  multimodal_config:
+    type: minimax_h3
+    workflow: fl2va
+    num_inference_steps: 50
+    # Component weights may be unloaded between Qwen, VAE and DiT stages.
+    assume_stage_unload: true
+    target:
+      frames: 124
+      height: 768
+      width: 1344
+    workflows:
+      fl2va:
+        # Prompt "Generate a cinematic video." (5 tokens) plus two
+        # 1016-row keyframe presentations from the source processor path.
+        text_condition_rows: 2037
+        keyframes: [first, last]
+      ref2va:
+        # Six 1010-row vision blocks + 47 labels/timestamps + 5 prompt rows.
+        text_condition_rows: 6112
+        references:
+          - kind: video
+            frames: 124
+            height: 768
+            width: 1344
+            audio_seconds: 5.1666666667
+
+  quant_config:
+    compute_dtype: fp16
+    weight_storage_dtype: fp16
+    kv_storage_dtype: fp16
+    communicate_dtype: fp16
+  time_limit_list: [null, null]

@@ -1,0 +1,32 @@
+{
+  "type": "minimax_h3",
+  "workflow": "fl2va",
+  "num_inference_steps": 50,
+  "assume_stage_unload": true,
+  "target": {
+    "frames": 124,
+    "height": 768,
+    "width": 1344
+  },
+  "workflows": {
+    "fl2va": {
+      "text_condition_rows": 2037,
+      "keyframes": [
+        "first",
+        "last"
+      ]
+    },
+    "ref2va": {
+      "text_condition_rows": 6112,
+      "references": [
+        {
+          "kind": "video",
+          "frames": 124,
+          "height": 768,
+          "width": 1344,
+          "audio_seconds": 5.1666666667
+        }
+      ]
+    }
+  }
+}

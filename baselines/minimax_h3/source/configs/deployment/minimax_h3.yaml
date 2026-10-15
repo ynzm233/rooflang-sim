@@ -1,0 +1,8 @@
+num_procs: 4
+parallel_strategies:
+  fused:
+    dp: 1
+    tp: 1
+    sp: 4
+    cp: 1
+    pp: 1

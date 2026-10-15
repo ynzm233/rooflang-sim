@@ -1,0 +1,181 @@
+{
+  "model": "MiniMax-H3",
+  "workflow": "fl2va",
+  "shape_summary": {
+    "workflow": "fl2va",
+    "target_latent_frames": 37,
+    "target_latent_height": 48,
+    "target_latent_width": 84,
+    "target_audio_latents_per_channel": 207,
+    "text_rows": 2037,
+    "condition_video_rows": 2016,
+    "condition_audio_rows": 0,
+    "target_video_rows": 37296,
+    "target_audio_rows": 414,
+    "packed_rows": 41763,
+    "qwen_raw_visual_tokens": 8064
+  },
+  "pipeline_dag": [
+    "media_normalize",
+    "qwen_condition_encode",
+    "condition_vae_encode",
+    "build_packed_layout",
+    "noise_visual_conditions_t0.999",
+    "prepare_target_video_noise",
+    "prepare_target_audio_noise",
+    "concat_read_only_condition_prefixes",
+    "build_dual_scheduler_timestep_plan",
+    {
+      "repeat": 50,
+      "body": [
+        "two_layer_text_token_refiner",
+        "one_transformer_forward",
+        "video_scheduler_update_target_suffix",
+        "audio_scheduler_update_target_suffix"
+      ]
+    },
+    "unpack_target_rows",
+    "video_vae_decode",
+    "audio_vae_decode"
+  ],
+  "stages": [
+    {
+      "name": "qwen_vision_encode",
+      "execution_time_ms": 15.235069396078918,
+      "compute_time_ms": 10.019242666666676,
+      "memory_time_ms": 4.715529642999172,
+      "comm_time_ms": 3.3072717707003414,
+      "total_flops": 2909192122368.0,
+      "total_mem_bytes": 7484265216.0,
+      "total_weight_bytes": 1184539392.0,
+      "peak_activation_bytes": 34707456.0,
+      "invocations": 1
+    },
+    {
+      "name": "qwen_text_condition",
+      "execution_time_ms": 115.92019903112825,
+      "compute_time_ms": 97.97625462292748,
+      "memory_time_ms": 62.08081692457199,
+      "comm_time_ms": 7.929738285983192,
+      "total_flops": 32960284999680.0,
+      "total_mem_bytes": 87729707008.0,
+      "total_weight_bytes": 63968411648.0,
+      "peak_activation_bytes": 78336000.0,
+      "invocations": 1
+    },
+    {
+      "name": "condition_vae_encode",
+      "execution_time_ms": 112.05626170305348,
+      "compute_time_ms": 107.05792670024687,
+      "memory_time_ms": 31.086555123329163,
+      "comm_time_ms": 0.0,
+      "total_flops": 36336175153152.0,
+      "total_mem_bytes": 42725036032.0,
+      "total_weight_bytes": 360613376.0,
+      "peak_activation_bytes": 33554432.0,
+      "invocations": 56
+    },
+    {
+      "name": "transformer_text_refiner",
+      "execution_time_ms": 553.759619260288,
+      "compute_time_ms": 508.0478179259258,
+      "memory_time_ms": 139.47473838925362,
+      "comm_time_ms": 0.0,
+      "total_flops": 169265394984000.0,
+      "total_mem_bytes": 191692620800.0,
+      "total_weight_bytes": 1541461504.0,
+      "peak_activation_bytes": 175214592.0,
+      "invocations": 50
+    },
+    {
+      "name": "transformer_denoise",
+      "execution_time_ms": 199389.17392826776,
+      "compute_time_ms": 177666.73942472407,
+      "memory_time_ms": 18472.13231761998,
+      "comm_time_ms": 9556.06668892384,
+      "total_flops": 5.2243487761248e+16,
+      "total_mem_bytes": 28381548861300.0,
+      "total_weight_bytes": 64694777344.0,
+      "peak_activation_bytes": 898093056.0,
+      "invocations": 50
+    },
+    {
+      "name": "video_vae_decode",
+      "execution_time_ms": 7316.265790415924,
+      "compute_time_ms": 5920.974300570861,
+      "memory_time_ms": 3037.468907237053,
+      "comm_time_ms": 0.0,
+      "total_flops": 1904513089920000.0,
+      "total_mem_bytes": 4174665478144.0,
+      "total_weight_bytes": 4844823552.0,
+      "peak_activation_bytes": 88326144.0,
+      "invocations": 196
+    },
+    {
+      "name": "audio_vae_decode",
+      "execution_time_ms": 1.9746747744103872,
+      "compute_time_ms": 1.5872417395884786,
+      "memory_time_ms": 1.0641966597177088,
+      "comm_time_ms": 0.0,
+      "total_flops": 539979639808.0,
+      "total_mem_bytes": 1462620752.0,
+      "total_weight_bytes": 129711984.0,
+      "peak_activation_bytes": 15898112.0,
+      "invocations": 1
+    }
+  ],
+  "execution_time_ms": 207504.38554284864,
+  "request_per_second": 0.0048191752544598865,
+  "packed_rows_per_second": 201.26321615200825,
+  "transformer_processed_rows_per_second": 10063.160807600412,
+  "latency_scope": "modeled_main_operators_only",
+  "transformer_component": "transformer",
+  "transformer_forward_count": 50,
+  "cfg": 1,
+  "video_scheduler_steps": 50,
+  "audio_scheduler_steps": 50,
+  "persistent_tensor_bytes": {
+    "prompt_embeds": 20858880,
+    "video_packed_rows": 7547904,
+    "audio_packed_rows": 26496,
+    "position_ids": 1002312,
+    "token_tags": 334104,
+    "packed_indices": 334104,
+    "all_step_timestep_indices": 16705200
+  },
+  "persistent_tensor_total_bytes": 46809000,
+  "indexed_known_weight_bytes": {
+    "qwen_conditioner": 66714780128,
+    "transformer": 66280430144,
+    "video_vae": 10415475936
+  },
+  "audio_vae_weight_proxy_bytes": 129711984.0,
+  "operator_graph_weight_proxy_bytes": 136724338800.0,
+  "all_resident_weight_bytes": 143540398192.0,
+  "all_resident_memory_bytes": 144485300248.0,
+  "operator_graph_multipliers": {
+    "qwen_vision_image": 1,
+    "qwen_text_condition": 1,
+    "condition_video_0": 28,
+    "condition_video_1": 28,
+    "transformer_text_refiner": 50,
+    "transformer_denoise": 50,
+    "video_vae_decode": 196,
+    "audio_vae_decode": 1
+  },
+  "peak_stage_memory_bytes": 67225332200.0,
+  "fits_peak_stage_memory": true,
+  "fits_all_resident_memory": false,
+  "memory_validity_basis": "peak_stage_memory",
+  "assume_stage_unload": true,
+  "evidence_boundary": {
+    "pipeline_and_shapes": "code-derived",
+    "transformer_layers": "config-derived generic dense-attention/FFN proxy",
+    "audio_convtranspose": "Conv1d load proxy after explicit upsample",
+    "video_vae_norm": "GroupNorm represented by an RMSNorm load proxy",
+    "precision": "configured workload/node precision; not an exact replay of upstream mixed precision. Source video VAE encoder uses FP32 and decoder uses mixed precision",
+    "attention_memory": "Q/K/V/O traffic lower bound; tiled kernel rereads not modeled",
+    "memory": "indexed weights plus persistent tensors and peak operator activation proxy; not allocator peak",
+    "latency": "modeled main-operator roofline sum, excluding media/layout/random/scheduler/unpack, tile blending and stage weight transfers; not profiler measurement"
+  }
+}

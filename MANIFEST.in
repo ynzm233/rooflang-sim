@@ -1,0 +1,6 @@
+include LICENSE.txt README.md requirements.lock.txt
+recursive-include docs *.md
+recursive-include examples *.py *.json
+recursive-include scripts *.py
+recursive-include baselines *.json *.csv *.md *.yaml
+recursive-include tests *.py

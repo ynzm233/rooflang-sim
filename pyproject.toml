@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rooflang-sim"
+version = "0.1.0"
+description = "Standalone analytical simulation of multimodal generation models"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE.txt"]
+dependencies = ["networkx>=3.0,<4"]
+
+[project.optional-dependencies]
+test = ["pytest>=7,<10"]
+plot = ["matplotlib>=3.7,<4"]
+
+[project.scripts]
+rooflang-sim = "rooflang.programs.experiments.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+rooflang = ["sources.json", "programs/models/**/*.json", "programs/models/**/*.md"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+markers = ["reproducibility: complete frozen source baseline comparisons"]

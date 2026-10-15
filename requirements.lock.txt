@@ -1,0 +1,17 @@
+# Verified with CPython 3.12.13; includes optional test and plot dependencies.
+contourpy==1.4.0
+cycler==0.12.1
+fonttools==4.67.0
+iniconfig==2.3.1
+kiwisolver==1.5.1
+matplotlib==3.11.2
+networkx==3.7
+numpy==2.5.4
+packaging==26.3
+pillow==12.3.0
+pluggy==1.6.0
+pygments==2.21.0
+pyparsing==3.3.3
+pytest==9.1.1
+python-dateutil==2.9.0.post0
+six==1.17.0

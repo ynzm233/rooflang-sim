@@ -1,0 +1,7 @@
+model_path: configs/models/minimax_h3.yaml
+deploy_strategy: minimax_h3
+deploy_config_path: configs/deployment/minimax_h3.yaml
+chip_path: configs/chips/A5_pr_server.yaml
+op_config: configs/op_config/op_config.yaml
+workload: configs/workload/workload_minimax_h3.yaml
+output_path: output/task/minimax_h3

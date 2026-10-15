@@ -1,0 +1,22 @@
+{
+  "source_repository": "model_Sim",
+  "source_commit": "f27d4bdfa823fe0b151749cc5d1e1d734e7fb583",
+  "baseline_python": "3.14",
+  "files": {
+    "configs/models/minimax_h3.yaml": "9fd82092ad7a4236dce66901579f2d6259a9e02b45d45ed2fe790743a670689e",
+    "configs/workload/workload_minimax_h3.yaml": "a0e4aac5d312b02696c39951bf65310665bbf97443f9a1e6db67fab14fbb8f5e",
+    "configs/deployment/minimax_h3.yaml": "1be1f4a2fb635c53eeb4346dde8ec6dc149e626af533eb21293fb328e3c57025",
+    "configs/task/minimax_h3.yaml": "78fba0e8feb00a3a0ded3b75b6b11d7de397bec13f65afd9778e0c873869eac8",
+    "configs/chips/A5_pr_server.yaml": "5b338e818ee368f3f0799bc2fad20738cf97febf55b802d645d0dc6b5019bf4f",
+    "configs/op_config/op_config.yaml": "51e7de9bb89400b33daa02cf701ded82318294d461add857b5d3006f1e4aa0e0",
+    "src/configs/minimax_h3_config.py": "4ea2c669c9584a0e5a7c1a0d7373563230544973a9f22996776c14853804d587",
+    "src/models/blocks/minimax_h3_blocks.py": "657ad7d73006be05ef062b732ee60c7d1a1831c69e76c37f74bbde8afc0f0b41",
+    "src/models/blocks/mha_block.py": "4af6a6a77bf7f07982d7d8e61a86bba60e46fe803a0ba422eecaf55cd958e2ab",
+    "src/models/blocks/mlp_dense_block.py": "a596899726751bc9e07d1c91618c0ae0eb310a205941d10d425f2fae5c67ba0a",
+    "src/models/blocks/patch_merger_block.py": "1d6da68a554c6e1974bf90f0d3392d7a8488bb55a331edaa702b20320ec2479f",
+    "src/models/blocks/embedding_block.py": "5f506a2dc7b337918c4d5800e636c8a1f64e2351eb13f25f71f2a5746e5abeec",
+    "src/application/minimax_h3_app.py": "f8e8c1bcb060a267f5a84cb5e52ef60c61afd41236b09bd89f4fec1c7ffe321c"
+  },
+  "weight_evidence": "indexed_weight_bytes preserved verbatim from source model YAML; original safetensors indexes not present in source repository",
+  "processor_evidence": "Source workload and modeling document record 2037/6112 processor rows; tokenizer weights not required for simulation."
+}

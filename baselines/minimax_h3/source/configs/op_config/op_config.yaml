@@ -1,0 +1,23 @@
+# 逐算子设置backend配置、具体算子的算力、访存利用率配置
+# 可设置 Node 独特的quant_config，可使用精确匹配或者前缀匹配
+
+op_global_config:
+  op_backend: [
+    "roofline",
+    "database"
+  ]
+  global_memory_efficiency: 0.8
+  global_cube_efficiency: 0.7
+  global_vector_efficiency: 0.6
+
+op_node_config:
+  routed_expert:
+    compute_dtype: fp8
+    weight_storage_dtype: fp4
+    memory_efficiency: 0.8
+    cube_efficiency: 0.7
+    vector_effciency: 0.5
+  kv_bmm:
+    kv_storage_dtype: fp8
+    vector_effciency: 0.5
+    memory_efficiency: 0.8

@@ -1,0 +1,9 @@
+{
+  "workflow": "fl2va",
+  "sp": 4,
+  "num_inference_steps": 50,
+  "assume_stage_unload": true,
+  "target": {"frames": 124, "height": 768, "width": 1344},
+  "text_condition_rows": 2037,
+  "keyframes": ["first", "last"]
+}

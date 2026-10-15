@@ -1,0 +1,9 @@
+{
+  "workflow": "ref2va",
+  "sp": 4,
+  "num_inference_steps": 50,
+  "assume_stage_unload": true,
+  "target": {"frames": 124, "height": 768, "width": 1344},
+  "text_condition_rows": 6112,
+  "references": [{"kind": "video", "frames": 124, "height": 768, "width": 1344, "audio_seconds": 5.1666666667}]
+}

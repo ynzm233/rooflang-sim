@@ -1,0 +1,540 @@
+{
+  "architecture_sha256": "255763b5321f03641eae3272cdcce043672a5fda69d53d7e94ff081b3967dab4",
+  "config": {
+    "assume_stage_unload": true,
+    "attention_softmax_compute_multiplier": 1.0,
+    "cp_size": 8,
+    "cpu_text_timing_included": false,
+    "deterministic": false,
+    "dit_tokens": 31632,
+    "ep_size": 8,
+    "image_height": 0,
+    "image_orientation": 1,
+    "image_present": false,
+    "image_width": 0,
+    "moe_active_experts_per_head": 256,
+    "moe_compute_amplification": 1.0,
+    "negative_text_tokens": 429,
+    "positive_text_tokens": 2014,
+    "precision_proxy": {
+      "bf16_from_fp16": 1.0,
+      "fp32_from_fp16": 0.5
+    },
+    "preview_height": null,
+    "preview_steps": 1,
+    "preview_width": null,
+    "ref_image_type": "original",
+    "refiner_height": null,
+    "refiner_steps": 1,
+    "refiner_width": null,
+    "resolution": "272p",
+    "seconds": 10,
+    "seed": 42,
+    "workflow": "t2v"
+  },
+  "hardware": {
+    "n_nodes": 1,
+    "name": "B300Cluster"
+  },
+  "metadata": {
+    "all_resident_memory_bytes": 52131757464,
+    "batch_size": 1,
+    "capacity_verdict_is_provisional": true,
+    "compute_dtype": "bf16",
+    "compute_scope": "critical_rank_per_stage_not_global_device_sum",
+    "end_to_end_timing_complete": false,
+    "fail_reason": "",
+    "fits_all_resident_memory": true,
+    "fits_peak_stage_memory": true,
+    "is_valid": true,
+    "main_cp": 8,
+    "main_dp": 1,
+    "main_ep": 8,
+    "main_pp": 1,
+    "memory_accounting": {
+      "all_resident_memory_bytes": 52131757464,
+      "all_resident_weight_bytes": 50788562328,
+      "architecture_source": "model_config.components",
+      "assume_stage_unload": true,
+      "assumptions": [
+        "Default CPU text encoder, roundtrip Preview/Refiner, GPU resident VAEs; Preview is unloaded before Refiner loads. CPU backups persist and restoring their storage does not copy GPU weights back to CPU.",
+        "Preview weight estimate uses checkpoint totals plus expert-padding/sharding arithmetic; Refiner dense checkpoint bytes are replicated, never divided by CP.",
+        "Eight latent-sized allocations approximate CFG/UniPC/history overlap; two full packed buffers approximate modality padding and concatenation before CP slicing. These configurable-shape scenarios are neither measured peaks nor rigorous upper bounds.",
+        "Single-op graph peaks cannot reconstruct allocator lifetimes. This scenario excludes unknown fused-kernel/library/compiler workspaces, fragmentation/reserved memory and cold-start state-dict peaks.",
+        "Video output proxy uses actual decoded tensor dimensions, including 1088-row storage at nominal 1080p. CPU postprocessing/mux buffers are separate from GPU capacity.",
+        "All-resident is a comparison scenario. CP/EP overlap on the same ranks; do not multiply cp_size by ep_size."
+      ],
+      "capacity_verdict_is_provisional": true,
+      "host_all_ranks_weight_bytes_proxy": 425800320000,
+      "host_leader_weight_bytes_proxy": 98068090112,
+      "indexed_weight_source": "model_config.indexed_weight_bytes",
+      "latent_upsample_weight_state": "Preview offloaded; Refiner loaded after interpolation under stage-unload scenario",
+      "leader_idle_gpu_resident_bytes_proxy": 3969672344,
+      "nonleader_idle_gpu_resident_bytes_proxy": 2818755248,
+      "peak_stage_memory_bytes": 52131757464,
+      "persistent_tensors": {
+        "audio_latent_fp32_bytes": 64000,
+        "decoded_video_bf16_bytes": 86016000,
+        "decoded_video_fp32_bytes": 172032000,
+        "preview_full_packed_fp32_bytes": 647823360,
+        "preview_latent_fp32_bytes": 2752512,
+        "reference_latent_fp32_bytes": 0,
+        "refiner_full_packed_fp32_bytes": 0,
+        "refiner_latent_fp32_bytes": 0,
+        "text_embeddings_bf16_bytes": 25016320
+      },
+      "preview": {
+        "active_expert_ranks": 6,
+        "checkpoint_index_total_bytes": 228107858176,
+        "ep_pad_buffer_per_rank_bytes": 73728,
+        "formula": "index_total - global_experts_BF16 - global_router_FP32 + local_experts_BF16 + local_router_FP32 + nonpersistent_EP_pad_zeros",
+        "local_heads_allocated": 2,
+        "notes": [
+          "EP8 pads 12 to 16 heads; every rank allocates 2 heads, including dummy-head ranks.",
+          "Dense/shared/adapters are replicated; CP does not shard their weights.",
+          "Router gate and two bias buffers are FP32 in the constructor. Applying that dtype to index subtraction is an explicit assumption without safetensors headers."
+        ],
+        "padded_heads": 16,
+        "replicated_nonexpert_bytes_proxy": 10561007872,
+        "resident_per_rank_bytes_proxy": 46818889984,
+        "routed_experts_global_bytes": 217432719360,
+        "routed_experts_per_rank_bytes": 36238786560,
+        "router_and_bias_global_bytes_assuming_fp32": 114130944,
+        "router_and_bias_per_rank_bytes": 19021824,
+        "status": "indexed-payload-derived proxy; runtime casts/other nonpersistent buffers excluded"
+      },
+      "rank_scope": "CP leader / worst loaded weight rank; all values are per rank unless named total",
+      "refiner_resident_per_rank_bytes_proxy": 0,
+      "request_weight_d2h_bytes": 0,
+      "request_weight_h2d_per_rank_bytes_proxy": 46818889984,
+      "scenario_factors": {
+        "pack_temporary_copies": 2,
+        "postprocess_float_output_copies": 3,
+        "scheduler_and_cfg_latent_copies": 8
+      },
+      "sources": [
+        "https://github.com/SandAI-org/MAGI-2-preview/blob/f68a0f9/inference/pipeline/inference_engine.py",
+        "https://github.com/SandAI-org/MAGI-2-preview/blob/f68a0f9/inference/model/magi2_preview.py",
+        "https://github.com/SandAI-org/MAGI-2-preview/blob/f68a0f9/inference/common/module_state_backup.py",
+        "https://github.com/SandAI-org/MAGI-2-preview/blob/f68a0f9/inference/model/vae2_2.py",
+        "https://github.com/SandAI-org/MAGI-2-preview/blob/f68a0f9/inference/model/turbo_vaed.py",
+        "https://github.com/SandAI-org/MAGI-2-preview/blob/f68a0f9/inference/model/sa_audio_vae.py"
+      ],
+      "stages": {
+        "audio_vae_decode": {
+          "explicit_temporary_bytes_proxy": 172032000,
+          "gpu_resident_weight_bytes_proxy": 3969672344,
+          "graph_peak_activation_bytes": 786432000,
+          "memory_bytes_proxy": 4783937176,
+          "persistent_and_scheduler_bytes_proxy": 27832832
+        },
+        "preview_denoise": {
+          "explicit_temporary_bytes_proxy": 1295646720,
+          "gpu_resident_weight_bytes_proxy": 50788562328,
+          "graph_peak_activation_bytes": 388694016,
+          "memory_bytes_proxy": 52131757464,
+          "persistent_and_scheduler_bytes_proxy": 47548416
+        },
+        "text_broadcast": {
+          "explicit_temporary_bytes_proxy": 25016320,
+          "gpu_resident_weight_bytes_proxy": 50788562328,
+          "graph_peak_activation_bytes": 0,
+          "memory_bytes_proxy": 50838594968,
+          "persistent_and_scheduler_bytes_proxy": 25016320
+        },
+        "video_vae_decode": {
+          "explicit_temporary_bytes_proxy": 516096000,
+          "gpu_resident_weight_bytes_proxy": 3969672344,
+          "graph_peak_activation_bytes": 792723456,
+          "memory_bytes_proxy": 4790228632,
+          "persistent_and_scheduler_bytes_proxy": 27832832
+        }
+      },
+      "status": "analytical working-set proxy, not allocator measurement or capacity guarantee",
+      "vae": {
+        "audio_decoder_parameters": 78122626,
+        "audio_decoder_weight_norm_materialized_bytes_proxy": 312220672,
+        "audio_encoder_parameters": 77989888,
+        "audio_full_autoencoder_fp32_bytes": 624450056,
+        "audio_scale_tensor_bytes": 8,
+        "notes": [
+          "Wan2.2 full VAE is FP32 and resident on all ranks, including T2V. Encoder and decoder graph weights must not be added again.",
+          "Turbo decoder and full audio autoencoder are resident only on the CP leader. Audio loads idle encoder parameters as well as decoder parameters.",
+          "Audio counts include weight_v/weight_g and Snake alpha/beta. Legacy weight_norm also keeps a materialized decoder weight after execution; a warmed-request proxy includes that duplicate.",
+          "Wan/Turbo scale lists retain mean/std/inverse-std tensors. Constructor counts exclude compiler and library workspaces.",
+          "Resident parameter facts are local architecture checkpoint-specific values; changing codec topology requires updating those full-module facts, including idle submodules."
+        ],
+        "turbo_decoder_bf16_bytes": 214245784,
+        "turbo_decoder_parameters": 107122892,
+        "turbo_scale_tensor_bytes": 576,
+        "wan_bottleneck_parameters": 11664,
+        "wan_decoder_parameters": 555049228,
+        "wan_encoder_parameters": 149627776,
+        "wan_full_vae_fp32_bytes": 2818754672,
+        "wan_scale_tensor_bytes": 576
+      }
+    },
+    "memory_status": "analytical_working_set_proxy_not_measured_allocator_peak",
+    "negative_text_tokens": 429,
+    "num_diffusion_steps": 1,
+    "operator_graph_multipliers": {
+      "audio_vae_decode": 1,
+      "preview_denoise": 1,
+      "text_broadcast": 1,
+      "video_decode_window_00": 1,
+      "video_decode_window_01": 1,
+      "video_decode_window_02": 1,
+      "video_decode_window_03": 1,
+      "video_decode_window_04": 1
+    },
+    "operator_graph_stages": {
+      "audio_vae_decode": "audio_vae_decode",
+      "preview_denoise": "preview_denoise",
+      "text_broadcast": "text_encode",
+      "video_decode_window_00": "video_vae_decode",
+      "video_decode_window_01": "video_vae_decode",
+      "video_decode_window_02": "video_vae_decode",
+      "video_decode_window_03": "video_vae_decode",
+      "video_decode_window_04": "video_vae_decode"
+    },
+    "peak_stage_memory_bytes": 52131757464,
+    "preview_forward_count": 1,
+    "prompt_len": 2014,
+    "refiner_forward_count": 0,
+    "refiner_steps": 1,
+    "request_count": 1,
+    "resolution": "272p",
+    "resolved_shape_summary": {
+      "audio_latent_shape": [
+        1,
+        250,
+        64
+      ],
+      "audio_tokens": 250,
+      "cp_size": 8,
+      "decode_latent_shape": [
+        1,
+        48,
+        32,
+        16,
+        28
+      ],
+      "decoded_video_shape": [
+        125,
+        256,
+        448,
+        3
+      ],
+      "ep_size": 8,
+      "image_latent_shape": null,
+      "image_layout": null,
+      "image_prefix_tokens": 0,
+      "image_tokens": 0,
+      "negative_text_tokens": 429,
+      "output_fps": 12.5,
+      "padded_moe_heads": 16,
+      "parallelism_status": "official_8_rank_config",
+      "positive_text_tokens": 2014,
+      "preview_attention_pairs": 501010514,
+      "preview_cfg_batch": 2,
+      "preview_forward_calls": 1,
+      "preview_latent_shape": [
+        1,
+        48,
+        32,
+        16,
+        28
+      ],
+      "preview_modality_tokens": {
+        "audio": 500,
+        "text": 2460,
+        "video": 28672
+      },
+      "preview_padded_tokens": 31632,
+      "preview_padding_tokens": 17,
+      "preview_per_rank_tokens": 3954,
+      "preview_raw_tokens": 31615,
+      "preview_sequence_lengths": [
+        16600,
+        15015
+      ],
+      "preview_steps": 1,
+      "preview_video_tokens": 14336,
+      "raw_audio_samples": 512000,
+      "real_moe_heads": 12,
+      "refiner_audio_tokens": 0,
+      "refiner_cond_attention_pairs": 0,
+      "refiner_cond_per_rank_tokens": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "refiner_cond_tokens": 0,
+      "refiner_forward_calls": 0,
+      "refiner_latent_shape": null,
+      "refiner_steps": 0,
+      "refiner_uncond_attention_pairs": 0,
+      "refiner_uncond_per_rank_tokens": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "refiner_uncond_tokens": 0,
+      "refiner_video_tokens": 0,
+      "resampled_audio_samples": 441000,
+      "resolution": "272p",
+      "turbo_windows": {
+        "calls": 5,
+        "input_lengths": [
+          8,
+          9,
+          9,
+          9,
+          8
+        ],
+        "output_frames": 125,
+        "padding": 3,
+        "processed_latent_frames": 43
+      },
+      "workflow": "t2v"
+    },
+    "timing_backend": "rooflang_discrete_event_simulator",
+    "timing_status": "partial_cpu_and_postprocess_untimed",
+    "total_cards": 8,
+    "weight_storage_dtype": "bf16",
+    "workflow": "t2v"
+  },
+  "profile": "minimal",
+  "schema_version": 1,
+  "stages": {
+    "audio_vae_decode": {
+      "graphs": [
+        {
+          "label": "audio_vae_decode",
+          "multiplier": 1,
+          "peak_memory_bytes": {
+            "n0-hbm3e-0": 312490504.0
+          },
+          "total_time_us": 3012.0651856057348,
+          "trace_entries": 127
+        }
+      ],
+      "metrics": {
+        "comm_time_ms": 0.0,
+        "compute_time_ms": 1.1257280651964443,
+        "cpu_execution_time_ms": null,
+        "cpu_peak_memory_bytes_proxy": 0,
+        "cpu_total_flops": 0,
+        "cpu_weight_bytes": 0,
+        "device": "accelerator",
+        "execution_time_ms": 3.0120651856057346,
+        "invocations": 1,
+        "measured_execution_time_ms": 3.0120651856057346,
+        "measurement_start_ms": 0.0,
+        "memory_time_ms": 2.5082431432258065,
+        "name": "audio_vae_decode",
+        "operator_count": 127,
+        "peak_activation_bytes": 786432000.0,
+        "peak_memory_bytes": 4783937176,
+        "timing_status": "modeled_accelerator_operators",
+        "total_flops": 1266444073346.0,
+        "total_mem_bytes": 19438884360.0,
+        "total_weight_bytes": 312490504.0
+      },
+      "operator_structure_sha256": "37591d2f54d6fd885a0250ea77bbf8b6da97c3c080703577a3da831f5ab69379",
+      "weighted_operators": {
+        "flops": 1266444073346.0,
+        "memory_traffic_bytes": 19438884360.0,
+        "operator_elapsed_ms": 3.0120651856057346,
+        "operator_invocations": 127
+      }
+    },
+    "preview_denoise": {
+      "graphs": [
+        {
+          "label": "preview_denoise",
+          "multiplier": 1,
+          "peak_memory_bytes": {
+            "n0-hbm3e-0": 46815547584.0,
+            "n0-hbm3e-1": 0.0,
+            "n0-hbm3e-2": 0.0,
+            "n0-hbm3e-3": 0.0,
+            "n0-hbm3e-4": 0.0,
+            "n0-hbm3e-5": 0.0,
+            "n0-hbm3e-6": 0.0,
+            "n0-hbm3e-7": 0.0
+          },
+          "total_time_us": 63039.072694138806,
+          "trace_entries": 4080
+        }
+      ],
+      "metrics": {
+        "comm_time_ms": 6.209224244444445,
+        "compute_time_ms": 38.54574424115682,
+        "cpu_execution_time_ms": null,
+        "cpu_peak_memory_bytes_proxy": 0,
+        "cpu_total_flops": 0,
+        "cpu_weight_bytes": 0,
+        "device": "accelerator",
+        "execution_time_ms": 63.0390726941388,
+        "invocations": 1,
+        "measured_execution_time_ms": 63.0390726941388,
+        "measurement_start_ms": 0.0,
+        "memory_time_ms": 27.735386817032257,
+        "name": "preview_denoise",
+        "operator_count": 2995,
+        "peak_activation_bytes": 388694016.0,
+        "peak_memory_bytes": 52131757464,
+        "timing_status": "modeled_accelerator_operators",
+        "total_flops": 85983030447317.42,
+        "total_mem_bytes": 227403651960.0,
+        "total_weight_bytes": 46815547584.0
+      },
+      "operator_structure_sha256": "385d88499fe58f760a78d08f5a4195c2dacb7a06f3f5769ebbce1ad9b7b9ac00",
+      "weighted_operators": {
+        "flops": 85983030447317.42,
+        "memory_traffic_bytes": 227403651960.0,
+        "operator_elapsed_ms": 63.0390726941388,
+        "operator_invocations": 2995
+      }
+    },
+    "text_encode": {
+      "graphs": [
+        {
+          "label": "text_broadcast",
+          "multiplier": 1,
+          "peak_memory_bytes": {
+            "n0-hbm3e-0": 0.0,
+            "n0-hbm3e-1": 0.0,
+            "n0-hbm3e-2": 0.0,
+            "n0-hbm3e-3": 0.0,
+            "n0-hbm3e-4": 0.0,
+            "n0-hbm3e-5": 0.0,
+            "n0-hbm3e-6": 0.0,
+            "n0-hbm3e-7": 0.0
+          },
+          "total_time_us": 101.38789333333331,
+          "trace_entries": 144
+        }
+      ],
+      "metrics": {
+        "comm_time_ms": 0.10138789333333333,
+        "compute_time_ms": 0.0,
+        "cpu_execution_time_ms": null,
+        "cpu_peak_memory_bytes_proxy": 52876635136,
+        "cpu_total_flops": 120872358723584,
+        "cpu_weight_bytes": 51249200128,
+        "device": "accelerator+cpu",
+        "execution_time_ms": 0.10138789333333331,
+        "invocations": 3,
+        "measured_execution_time_ms": 0.10138789333333331,
+        "measurement_start_ms": 0.0,
+        "memory_time_ms": 0.0,
+        "name": "text_encode",
+        "operator_count": 20,
+        "peak_activation_bytes": 0,
+        "peak_memory_bytes": 50838594968,
+        "timing_status": "partial_cpu_untimed",
+        "total_flops": 0.0,
+        "total_mem_bytes": 50032736.0,
+        "total_weight_bytes": 0
+      },
+      "operator_structure_sha256": "937a701c8fbc189b1ea5c212b6d9f3108c4c3d2c03f70bafdc608755b3ba48a6",
+      "weighted_operators": {
+        "flops": 0.0,
+        "memory_traffic_bytes": 50032736.0,
+        "operator_elapsed_ms": 0.10138789333333331,
+        "operator_invocations": 18
+      }
+    },
+    "video_vae_decode": {
+      "graphs": [
+        {
+          "label": "video_decode_window_00",
+          "multiplier": 1,
+          "peak_memory_bytes": {
+            "n0-hbm3e-0": 214245784.0
+          },
+          "total_time_us": 7954.9656327808525,
+          "trace_entries": 234
+        },
+        {
+          "label": "video_decode_window_01",
+          "multiplier": 1,
+          "peak_memory_bytes": {
+            "n0-hbm3e-0": 214245784.0
+          },
+          "total_time_us": 9771.3744718204,
+          "trace_entries": 234
+        },
+        {
+          "label": "video_decode_window_02",
+          "multiplier": 1,
+          "peak_memory_bytes": {
+            "n0-hbm3e-0": 214245784.0
+          },
+          "total_time_us": 9771.3744718204,
+          "trace_entries": 234
+        },
+        {
+          "label": "video_decode_window_03",
+          "multiplier": 1,
+          "peak_memory_bytes": {
+            "n0-hbm3e-0": 214245784.0
+          },
+          "total_time_us": 9771.3744718204,
+          "trace_entries": 234
+        },
+        {
+          "label": "video_decode_window_04",
+          "multiplier": 1,
+          "peak_memory_bytes": {
+            "n0-hbm3e-0": 214245784.0
+          },
+          "total_time_us": 8696.884031266869,
+          "trace_entries": 234
+        }
+      ],
+      "metrics": {
+        "comm_time_ms": 0.0,
+        "compute_time_ms": 29.113140153912887,
+        "cpu_execution_time_ms": null,
+        "cpu_peak_memory_bytes_proxy": 0,
+        "cpu_total_flops": 0,
+        "cpu_weight_bytes": 0,
+        "device": "accelerator",
+        "execution_time_ms": 45.96597307950892,
+        "invocations": 5,
+        "measured_execution_time_ms": 45.96597307950892,
+        "measurement_start_ms": 0.0,
+        "memory_time_ms": 21.382127350709677,
+        "name": "video_vae_decode",
+        "operator_count": 1170,
+        "peak_activation_bytes": 792723456.0,
+        "peak_memory_bytes": 4790228632,
+        "timing_status": "modeled_accelerator_operators",
+        "total_flops": 65462965714944.0,
+        "total_mem_bytes": 165711486968.0,
+        "total_weight_bytes": 214245784.0
+      },
+      "operator_structure_sha256": "5efddc23864b9d692dfb643cdd4a4e6b8877ecbe51895131e48db0451b0ae832",
+      "weighted_operators": {
+        "flops": 65462965714944.0,
+        "memory_traffic_bytes": 165711486968.0,
+        "operator_elapsed_ms": 45.96597307950892,
+        "operator_invocations": 1170
+      }
+    }
+  },
+  "total_execution_time_ms": 112.1184988525868
+}

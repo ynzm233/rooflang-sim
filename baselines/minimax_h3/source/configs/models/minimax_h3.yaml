@@ -1,0 +1,171 @@
+model_name: MiniMax-H3
+model_type: multimodal_audio_video_generation
+
+# Verified from local safetensors indexes. audio_vae has no equivalent index.
+indexed_weight_bytes:
+  qwen_conditioner: 66714780128
+  transformer: 66280430144
+  transformer_ref: 66280430144
+  video_vae: 10415475936
+
+components:
+  - name: qwen_vision
+    component_type: text_encoder_vision
+    hidden_size: 1152
+    out_hidden_size: 5120
+    patch_size: 16
+    spatial_merge_size: 2
+    temporal_patch_size: 2
+    layer_blocks:
+      - repeat_times: 1
+        layers:
+          - id: vision_patch_embed
+            blocks:
+              - type: minimax-h3-qwen-vision-patch-embed
+      - repeat_times: 27
+        layers:
+          - id: vision_layer
+            blocks:
+              - type: minimax-h3-qwen-vision-attn
+                num_heads: 16
+                head_dim: 72
+                causal: false
+              - type: mlp-dense
+                hidden_act: gelu
+                intermediate_size: 4304
+      - repeat_times: 1
+        layers:
+          - id: vision_merger
+            blocks:
+              - type: patch-merger
+      # Additional mergers at visual layers 8, 16, 24 (post-shuffle norm).
+      - repeat_times: 3
+        layers:
+          - id: deepstack_merger
+            blocks:
+              - type: minimax-h3-qwen-deepstack-merger
+
+  - name: qwen_text
+    component_type: text_encoder
+    hidden_size: 5120
+    vocab_size: 151936
+    layer_blocks:
+      - repeat_times: 64
+        layers:
+          - id: qwen_layer
+            blocks:
+              - type: attn-gqa
+                num_heads: 64
+                kv_heads: 8
+                head_dim: 128
+                causal: true
+              - type: mlp-dense
+                hidden_act: silu
+                intermediate_size: 25600
+      - repeat_times: 1
+        layers:
+          - id: deepstack_injection
+            blocks:
+              - type: minimax-h3-qwen-deepstack-add
+
+  - name: video_vae_encoder
+    component_type: visual_condition_encoder
+    hidden_size: 1024
+    layer_blocks:
+      - repeat_times: 1
+        layers:
+          - id: video_vae_encoder
+            blocks:
+              - type: minimax-h3-video-vae-encoder
+
+  - name: audio_vae_encoder
+    component_type: audio_reference_encoder
+    hidden_size: 2048
+    layer_blocks:
+      - repeat_times: 1
+        layers:
+          - id: audio_vae_encoder
+            blocks:
+              - type: minimax-h3-ref2va-audio-vae-encoder
+
+  - name: transformer_text_refiner
+    component_type: dit_text_refiner
+    hidden_size: 5376
+    layer_blocks:
+      - repeat_times: 2
+        layers:
+          - id: text_refiner_layer
+            blocks:
+              - type: attn-mha
+                num_heads: 56
+                head_dim: 128
+                causal: false
+                use_rope: false
+              - type: mlp-dense
+                hidden_act: silu
+                intermediate_size: 14336
+      - repeat_times: 1
+        layers:
+          - id: text_refiner_final_norm
+            blocks:
+              - type: minimax-h3-rmsnorm
+
+  - name: transformer
+    component_type: dit_fl2va
+    hidden_size: 5376
+    layer_blocks: &minimax_h3_transformer_layers
+      - repeat_times: 1
+        layers:
+          - id: packed_io
+            blocks:
+              - type: minimax-h3-packed-io
+      - repeat_times: 50
+        layers:
+          - id: joint_audio_video_layer
+            blocks:
+              - type: minimax-h3-adaln-projection
+              - type: attn-mha
+                num_heads: 56
+                head_dim: 128
+                causal: false
+                use_adaLN: true
+              - type: mlp-dense
+                hidden_act: silu
+                intermediate_size: 14336
+                use_adaLN: true
+
+  - name: transformer_ref
+    component_type: dit_ref2va
+    hidden_size: 5376
+    layer_blocks: *minimax_h3_transformer_layers
+
+  - name: video_vae_decoder
+    component_type: vae_decoder_video
+    hidden_size: 2048
+    layer_blocks:
+      - repeat_times: 1
+        layers:
+          - id: video_decoder_io
+            blocks:
+              - type: minimax-h3-video-decoder-io
+      - repeat_times: 36
+        layers:
+          - id: video_decoder_transformer
+            blocks:
+              - type: attn-mha
+                num_heads: 32
+                head_dim: 64
+                causal: false
+              - type: mlp-dense
+                hidden_act: silu
+                intermediate_size: 8192
+
+  - name: audio_vae_decoder
+    component_type: vae_decoder_audio
+    hidden_size: 2048
+    layer_blocks:
+      - repeat_times: 1
+        layers:
+          - id: audio_vae_decoder
+            blocks:
+              - type: minimax-h3-audio-vae-decoder
