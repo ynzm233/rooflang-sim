@@ -13,6 +13,8 @@
 | `python examples/toy_model.py --check` | 3 项通过；独立手算 FLOPs／流量／驻留和重复统计 |
 | 构建 wheel，安装到只含 NetworkX 的另一新环境 | 成功；不使用 editable 路径 |
 | 安装后的 wheel 在审计钩子下跑四条完整工作流 | 全部通过；禁止网络和两个源仓库／构建目录读取，仅允许安装包、Python 运行时和输出目录 |
+| 桌面最终目录使用独立系统 Python 3.14.2，最小 test 安装 | 645 项通过、1 个可选绘图模块跳过，9.74 秒；不依赖旧库内的 Python 运行时 |
+| 系统 Python 3.14.2 的非 editable wheel 离线审计 | 四条完整工作流再次通过，旧仓库及构建目录的任何读取均被禁止 |
 | 文档相对链接、Python 语法 | 通过 |
 
 验收环境的固定依赖见 `requirements.lock.txt`。包内 `.py/.json` 内容 SHA-256：

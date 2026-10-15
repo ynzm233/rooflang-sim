@@ -7,6 +7,8 @@ import os
 
 import pytest
 
+pytest.importorskip("matplotlib", reason="Install rooflang-sim[plot] to test optional graph rendering")
+
 from rooflang.language.graph import ComputeGraph
 from rooflang.language.kernels.forward import Gemm, RMSNorm
 from rooflang.language.kernels.identity import Spawn, Concat

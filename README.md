@@ -99,6 +99,8 @@ python scripts/magi2_baseline.py
 python scripts/minimax_h3_baseline.py
 ```
 
+未安装 `.[plot]` 时跳过可选绘图测试；执行全部测试请先安装 `python -m pip install -e '.[test,plot]'`。本次完整验收为 666 项通过。
+
 | 模型／工作流 | 冻结源时延（ms） | 口径 |
 | --- | ---: | --- |
 | MAGI I2V | 48356.312568154266 | B300 8 卡，1080p，Preview=100，Refiner=5 |
