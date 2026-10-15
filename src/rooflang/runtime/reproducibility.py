@@ -1,5 +1,6 @@
 """Portable run configuration and provenance; no source checkout is required."""
 
+from copy import deepcopy
 from dataclasses import asdict, is_dataclass
 from hashlib import sha256
 from importlib.metadata import PackageNotFoundError, version
@@ -44,7 +45,10 @@ def hardware_snapshot(hardware):
     for _, _, attributes in hardware._graph.edges(data=True):
         for edge in attributes["fabrics"]:
             fabrics.append({**vars(edge), "src": edge.src.name, "dst": edge.dst.name})
-    return {"nodes": nodes, "fabrics": sorted(fabrics, key=lambda item: item["name"])}
+    snapshot = {"nodes": nodes, "fabrics": sorted(fabrics, key=lambda item: item["name"])}
+    if getattr(hardware, "metadata", None):
+        snapshot["metadata"] = deepcopy(hardware.metadata)
+    return snapshot
 
 
 def config_snapshot(workflow, *, model_name, hardware_name, stage, config, hardware):

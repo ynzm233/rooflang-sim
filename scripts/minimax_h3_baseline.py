@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify portable H3 against frozen baselines, or rerun an explicit source checkout."""
+"""Verify frozen H3 baselines with historical model_Sim hardware, or rerun its source."""
 from __future__ import annotations
 import argparse
 import csv
@@ -14,9 +14,44 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT/'src'))
 
 
+def source_hardware(n_devices=4):
+    """Rebuild historical model_Sim hardware only for source-baseline verification."""
+    from rooflang.language.graph import HardwareGraph, FabricEdge
+    from rooflang.language.hardware.component import Compute, Memory
+
+    if type(n_devices) is not int or not 1 <= n_devices <= 8:
+        raise ValueError('Historical A5_pr_server supports 1 to 8 devices within one source node')
+
+    class SourceHardware(HardwareGraph):
+        def find_aggregate_bandwidth(self, devices):
+            efficiencies = {2: .142857, 4: .428571, 8: 1.0}
+            key = min(efficiencies, key=lambda k: abs(k-len(devices)))
+            return 392 * .7 * efficiencies[key]
+
+    hardware = SourceHardware()
+    hardware.n_devices = n_devices
+    gpus = []
+    for i in range(n_devices):
+        gpu = Compute(name=f'a5-{i}', kind='gpu', tflops={
+            'fp16': 486 * .7, 'fp8': 972 * .7,
+            'fp16:cube': 486 * .7, 'fp16:vector': 54 * .6,
+            'fp8:cube': 972 * .7, 'fp8:vector': 108 * .6})
+        memory = Memory(name=f'hbm-{i}', kind='hbm', capacity_gb=128 * 1024**3 / 1e9)
+        hardware.add_node(gpu); hardware.add_node(memory); gpus.append(gpu)
+        bw = 1600 * .8 * 1024**3 / 1e9
+        hardware.add_edge(FabricEdge(name='hbm', src=gpu, dst=memory,
+            src_to_dst_bandwidth_gbs=bw, dst_to_src_bandwidth_gbs=bw,
+            is_full_duplex=False, alpha_us=0))
+    for i, src in enumerate(gpus):
+        for dst in gpus[i+1:]:
+            hardware.add_edge(FabricEdge(name='intra-node', src=src, dst=dst,
+                src_to_dst_bandwidth_gbs=392*.7, dst_to_src_bandwidth_gbs=392*.7,
+                is_full_duplex=True, alpha_us=1))
+    return hardware
+
+
 def verify(baselines):
     from rooflang.programs.models.minimax_h3 import create_workflow
-    from rooflang.programs.models.minimax_h3.hardware import A5PRServer
     from rooflang.runtime.metrics_export import _operator_rows, _semantic_stage
     def equal(actual, expected, label):
         if isinstance(expected, (int,float)) and not isinstance(expected,bool):
@@ -25,7 +60,7 @@ def verify(baselines):
         if not ok: raise AssertionError(f'{label}: {actual!r} != {expected!r}')
     for workflow in ('fl2va','ref2va'):
         reference=json.loads((baselines/workflow/'summary.json').read_text())
-        model=create_workflow(A5PRServer(),{'workflow':workflow}); results=model.run()
+        model=create_workflow(source_hardware(),{'workflow':workflow}); results=model.run()
         for key in ('shape_summary','operator_graph_multipliers','transformer_forward_count',
                     'persistent_tensor_bytes','indexed_known_weight_bytes','all_resident_weight_bytes',
                     'all_resident_memory_bytes','peak_stage_memory_bytes','operator_graph_weight_proxy_bytes'):
@@ -48,7 +83,7 @@ def verify(baselines):
                         equal(new[key],float(previous[key] or 0),graph.label+'/'+new['node_name']+'/'+key)
                 count+=len(actual)
         equal(total,reference['execution_time_ms'],workflow+'/execution_time_ms')
-        print(f'{workflow}: PASS; {count} operator rows; {total:.12f} ms')
+        print(f'{workflow}: PASS (historical model_Sim hardware); {count} operator rows; {total:.12f} ms')
 
 
 SOURCE_RUNNER = r'''

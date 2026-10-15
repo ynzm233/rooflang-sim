@@ -83,7 +83,7 @@ python examples/toy_model.py --check --output-dir outputs/toy
 | `summary.json` | 与阶段／计划 CSV 对应的机器可读原始数值，保留嵌套结构和完整浮点精度 |
 | `config.snapshot.json`、`provenance.json` | 合并后的输入、生效配置／架构、硬件快照；版本信息、运行环境和包内容 SHA-256，用于追溯与复现 |
 
-时间单位是 **ms**，流量／存储单位是 **bytes**；原生硬件图的 GB 使用十进制。A5 预设以 GiB 表示容量、GiB/s 表示 HBM 带宽，再转换为硬件图的十进制单位；跨预设比较时需先统一单位。算子 CSV 中 `graph_multiplier` 表示该图执行次数，算子成本乘它才能与阶段工作量比较。`compute_ms`、`memory_ms`、`network_ms` 是资源工作量，不能直接相加当墙钟时延；有并行时也不能简单累加算子时延。阶段时延来自仿真时间线。`weight_read` 表示访问量，`weight_saved` 表示该行记账的权重；重复图不会把权重驻留倍增。
+时间单位是 **ms**，流量／存储单位是 **bytes**；所有当前硬件预设的 GB、GB/s 均使用十进制。A5 采用官方 950PR 的 128 GB 容量和 1600 GB/s 峰值带宽，并保留明确标注的效率与通信仿真假设；官方来源和假设随 `config.snapshot.json` 的 `hardware.metadata` 导出，详见 [A5 参数口径](docs/minimax_h3.md#硬件规格与仿真假设)。算子 CSV 中 `graph_multiplier` 表示该图执行次数，算子成本乘它才能与阶段工作量比较。`compute_ms`、`memory_ms`、`network_ms` 是资源工作量，不能直接相加当墙钟时延；有并行时也不能简单累加算子时延。阶段时延来自仿真时间线。`weight_read` 表示访问量，`weight_saved` 表示该行记账的权重；重复图不会把权重驻留倍增。
 
 `timing_included=false` 或空时延表示未建模，**不表示零耗时**。`peak_activation_bytes` 是算子级代理；模型提供的 `peak_stage_memory_bytes` 是解析工作集。`is_valid=true` 表示在明确假设下容量可行，不等同于真实部署保证。只跑一个阶段时，计划汇总仅代表所选阶段。
 
@@ -91,7 +91,7 @@ python examples/toy_model.py --check --output-dir outputs/toy
 
 ## 5. 结果复现与测试
 
-`baselines/` 保存各工作流的固定参考结果、配置、精度与比较方法。校验脚本运行当前模型，逐项比较 shape、图执行次数、算子成本、阶段时延和显存统计。运行与基线校验只需本仓库及已安装的 Python 依赖。完整验收记录见 [validation.md](docs/validation.md)。
+`baselines/` 保存各工作流的固定参考结果、配置、精度与比较方法。校验脚本运行当前模型，逐项比较 shape、图执行次数、算子成本、阶段时延和显存统计。H3 脚本使用隔离的历史硬件重放原工程基线，日常 CLI 使用修正后的官方 950PR 规格；旧基线的二进制内存口径只用于历史复现。运行与基线校验只需本仓库及已安装的 Python 依赖。完整验收记录见 [validation.md](docs/validation.md)。
 
 ```bash
 python -m pytest -q
@@ -99,14 +99,14 @@ python scripts/magi2_baseline.py
 python scripts/minimax_h3_baseline.py
 ```
 
-未安装 `.[plot]` 时跳过可选绘图测试；执行全部测试请先安装 `python -m pip install -e '.[test,plot]'`。已验证的完整测试集为 666 项通过。
+未安装 `.[plot]` 时跳过可选绘图测试；执行全部测试请先安装 `python -m pip install -e '.[test,plot]'`。各次测试结果见验收记录。
 
-| 模型／工作流 | 基线时延（ms） | 口径 |
+| 模型／工作流 | 当前默认仿真时延（ms） | 口径 |
 | --- | ---: | --- |
 | MAGI I2V | 48356.312568154266 | B300 8 卡，1080p，Preview=100，Refiner=5 |
 | MAGI T2V | 46695.35382179358 | 同上 |
-| MiniMax-H3 FL2VA | 207504.38554284864 | A5 4 卡 SP4，FP16，50 步 |
-| MiniMax-H3 Ref2VA | 624059.5473882345 | 同上，参考视频＋音频 profile |
+| MiniMax-H3 FL2VA | 228193.52842317586 | 官方 950PR 规格＋仿真假设，4 卡 SP4，FP16，50 步 |
+| MiniMax-H3 Ref2VA | 685813.7461188152 | 同上，参考视频＋音频 profile |
 
 以上都是**已建模部分的预测值，不是实测端到端时延**。MAGI 的 CPU 文本编码仅计 FLOPs／内存，未标定延迟；MiniMax-H3 对 ConvTranspose、GroupNorm、FlashAttention 访存和显存峰值采用近似建模；媒体处理、阶段权重搬运等遗漏项见 [MAGI 边界](docs/magi2_preview.md) 与 [MiniMax-H3 边界](docs/minimax_h3.md)。修改公式时，应新增带版本的基线，并记录变化原因和适用范围。
 

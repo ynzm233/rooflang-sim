@@ -1,5 +1,6 @@
 """Whole-graph reproduction against independently rerun model_Sim snapshots."""
 import csv
+import importlib.util
 import json
 from pathlib import Path
 import pytest
@@ -10,11 +11,15 @@ from rooflang.programs.models.minimax_h3.bridge import component_nodes
 from rooflang.runtime.metrics_export import _operator_rows, _semantic_stage, export_metrics
 
 BASE = Path(__file__).parents[1] / 'baselines/minimax_h3'
+SPEC = importlib.util.spec_from_file_location(
+    'minimax_h3_baseline', Path(__file__).parents[1] / 'scripts/minimax_h3_baseline.py')
+BASELINE = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(BASELINE)
 
 @pytest.mark.parametrize('workflow', ['fl2va','ref2va'])
 def test_full_source_reproduction(workflow, tmp_path):
     baseline=json.loads((BASE/workflow/'summary.json').read_text())
-    w=create_workflow(A5PRServer(),{'workflow':workflow});results=w.run()
+    w=create_workflow(BASELINE.source_hardware(),{'workflow':workflow});results=w.run()
     assert w.metadata['shape_summary']==baseline['shape_summary']
     assert w.metadata['operator_graph_multipliers']==baseline['operator_graph_multipliers']
     assert w.metadata['transformer_forward_count']==50

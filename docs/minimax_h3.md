@@ -10,19 +10,19 @@ rooflang-sim --model minimax_h3 --hardware A5_pr_server \
 rooflang-sim --model minimax_h3 --hardware A5_pr_server \
   --config examples/minimax_h3_ref2va.json --output-dir outputs/h3-ref2va
 python scripts/minimax_h3_baseline.py
-python -m pytest -q tests/test_minimax_h3.py
+python -m pytest -q tests/test_minimax_h3.py tests/test_a5_950pr.py
 ```
 
 `--config` 是扁平模型参数 JSON；模型名、硬件名和输出目录通过 CLI 传入。省略 H3 硬件参数时默认 `A5_pr_server`。该模型输出性能和容量估算，不生成图片、视频、音频或模型权重。
 
-两条默认流程均为 batch=1、SP=4、TP/CP/DP/PP=1、FP16、124 帧、768×1344、50 次去噪。对应的冻结基线如下：
+两条默认流程均为 batch=1、SP=4、TP/CP/DP/PP=1、FP16、124 帧、768×1344、50 次去噪。采用官方 950PR 规格及下文列明的仿真假设，当前完整运行结果如下：
 
-| 流程 | 含义 | packed rows | 基线主算子时延 ms |
+| 流程 | 含义 | packed rows | 当前主算子时延 ms |
 |---|---|---:|---:|
-| FL2VA | 首帧、尾帧或首尾两帧约束生成带音轨视频；默认首尾两帧 | 41763 | 207504.38554284864 |
-| Ref2VA | 参考图像/视频和可选参考音频约束生成带音轨视频；默认参考视频带音轨 | 81532 | 624059.5473882345 |
+| FL2VA | 首帧、尾帧或首尾两帧约束生成带音轨视频；默认首尾两帧 | 41763 | 228193.52842317586 |
+| Ref2VA | 参考图像/视频和可选参考音频约束生成带音轨视频；默认参考视频带音轨 | 81532 | 685813.7461188152 |
 
-`baselines/minimax_h3/` 保存冻结的 summary、阶段 CSV、逐图算子 CSV、配置和校验信息。校验脚本逐行比对算子身份、层号、FLOPs、访存、权重和时间分项，并核对阶段次数、总量、shape、驻留容量。浮点容差为相对 `1e-10`、绝对 `1e-8`；不要求不同 Python 版本产生逐字节相同的浮点字符串。
+`baselines/minimax_h3/` 保存原工程冻结的 summary、阶段 CSV、逐图算子 CSV、配置和校验信息，供历史源复现。其 `source/configs/chips/A5_pr_server.yaml` 不参与当前仿真。校验脚本通过仅用于验证的 `source_hardware()` 重放该目录，逐行比对算子身份、层号、FLOPs、访存、权重和时间分项，并核对阶段次数、总量、shape、驻留容量。当前 950PR 参数由 `tests/test_a5_950pr.py` 的手算和容量边界测试验证，默认流程结果以本页上表为准。浮点容差为相对 `1e-10`、绝对 `1e-8`；不要求不同 Python 版本产生逐字节相同的浮点字符串。
 
 ## 接入数据如何准备
 
@@ -60,7 +60,29 @@ shape 在内部 workflow metadata 中同时提供 `shape_summary` 和 `resolved_
 
 H3 复用 MAGI 的成本算子和 analytical kernel；本包补充 Gelu、LayerNorm、Embedding。新增算子时先补参数/形状、FLOPs、activation/weight/KV 字节及计算单元，再在配方中建节点并核对数量、维度和手算结果。不要将固定时间写成算子答案。若同一算子已经在共享成本层存在，优先复用。
 
-`hardware.py` 定义 A5 的计算口径：Cube FP16=486 TFLOPS×0.7、Vector FP16=54 TFLOPS×0.6；HBM 带宽使用 `1600×0.8×1024³ bytes/s`，容量为 128 GiB；通信使用十进制 GB/s、拓扑效率和集体操作效率及 1μs 延迟。HBM 带宽参数按 GiB/s 换算，通信带宽参数按 GB/s 换算，调整硬件配置时需要区分这两种单位。
+## 硬件规格与仿真假设
+
+`A5_pr_server` 的生效参数在 `src/rooflang/programs/models/minimax_h3/hardware.py`。选用 Ascend 950PR 的 32 Cube／64 Vector、128 GB 规格，来源为[昇腾官方处理器页](https://www.hiascend.com/hardware/processor)及其[《昇腾950 NPU架构白皮书》表3-1，PDF第13–15页](https://public-download.obs.cn-east-2.myhuaweicloud.com/ascend/%E6%98%87%E8%85%BE950%20NPU%E6%9E%B6%E6%9E%84%E7%99%BD%E7%9A%AE%E4%B9%A6.pdf#page=13)，核查日期为 2026-10-15。
+
+| 参数 | 官方峰值 | 仿真有效值 |
+|---|---:|---:|
+| Cube FP16 | 432 TFLOPS | 302.4 TFLOPS（×0.7） |
+| Cube FP8 | 865 TFLOPS | 605.5 TFLOPS（×0.7；当前 H3 工作流只用 FP16） |
+| Vector FP16 | 54 TFLOPS | 32.4 TFLOPS（×0.6） |
+| 内存容量 | 128 GB | 128×10⁹ bytes |
+| 内存带宽 | 1600 GB/s | 1280 GB/s（×0.8） |
+
+486 TFLOPS 是该 PR 规格的 Cube+Vector FP16 总算力，不能作为 Cube 单元峰值。内存容量和带宽统一按十进制计算，取消旧配置的 GiB／GiB/s 换算。
+
+以下值缺少对应的官方依据，但会影响仿真，保留在 `SIMULATION_ASSUMPTIONS` 中：
+
+- Cube／Vector／内存效率为 0.7／0.6／0.8。
+- 单节点最多 8 卡；节点内以对称全双工逻辑边建模，带宽参数为每方向 392 GB/s，效率 0.7，延迟 1 μs。
+- 集合通信按 2／4／8 卡使用 0.142857／0.428571／1 的带宽系数；其他卡数沿用最近档位。它们描述源模型的聚合通信近似，没有实测校准依据。
+
+官方的 2016 GB/s 是芯片 UB 双向总带宽，不能直接替换这里的服务器逻辑边或集合通信带宽。以上假设并非官方规格或实测结果。它们与官方峰值、来源 URL、所选规格一起导出到 `config.snapshot.json` 的 `hardware.metadata`，可追踪有效吞吐的计算依据。
+
+当前有效配置不包含未使用且缺少官方依据的 Vector FP8 算力、显式 HBM 零延迟和跨节点参数。历史源快照保留原样，不作为当前配置加载。当前模型不计 kernel 启动开销，也不模拟跨节点部署。
 
 原生设备中的 `fp16:cube` 与 `fp16:vector` 是**计算吞吐键**，不是新增张量 dtype。混合算子按两种单元的 FLOPs/吞吐耗时求和，再与访存耗时取 roofline 最大值；输出 `compute_dtype` 仍为 FP16。其他硬件需显式提供这两个吞吐键、对称的 HBM 读写带宽与容量，不能擅自把 Tensor Core 峰值用于向量运算。
 

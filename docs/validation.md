@@ -1,40 +1,35 @@
 # 交付验收（2026-10-15）
 
-本记录针对独立 `rooflang-sim`，不是对真实设备性能精度的承诺。
+本记录对应当前 `rooflang-sim`：`A5_pr_server` 已采用官方 Ascend 950PR 规格，并明确保留必要的效率与通信仿真假设。运行环境为仓库 `.venv`，Python 3.14.2、NetworkX 3.7。
 
 ## 已执行的检查
 
 | 检查 | 结果 |
 | --- | --- |
-| 新建 Python 3.12.13 虚拟环境，标准 editable 安装 | 成功；基础依赖仅 NetworkX，测试／绘图是可选依赖 |
-| `python -m pytest -q` | 666 项通过，25.46 秒；覆盖通用核心、算子、通信、容量、阶段、导出和四工作流回归 |
-| `python scripts/magi2_baseline.py` | I2V/T2V 默认完整工作流通过；另有 272p 轻量配置回归 |
-| `python scripts/minimax_h3_baseline.py` | FL2VA 4288 行、Ref2VA 4282 行逐算子与阶段汇总通过 |
-| `python examples/toy_model.py --check` | 3 项通过；独立手算 FLOPs／流量／驻留和重复统计 |
-| 构建 wheel，安装到只含 NetworkX 的另一新环境 | 成功；不使用 editable 路径 |
-| 安装后的 wheel 在审计钩子下跑四条完整工作流 | 全部通过；禁止网络，仅允许读取安装包、Python 运行时和输出目录 |
-| 桌面目录使用系统 Python 3.14.2，最小 test 安装 | 645 项通过、1 个可选绘图模块跳过，9.74 秒；使用独立虚拟环境 |
-| 系统 Python 3.14.2 的非 editable wheel 离线审计 | 四条完整工作流再次通过；文件读取范围限定为安装包、Python 运行时和输出目录 |
-| 文档相对链接、Python 语法 | 通过 |
+| `.venv/bin/python -m pytest -q` | 652 项通过，1 个可选绘图模块跳过，9.47 秒；覆盖核心、算子、通信、容量、阶段、导出和模型回归 |
+| `tests/test_a5_950pr.py` | 7 项通过：Cube/Vector 手算成本、FP8 不支持路径、十进制带宽、128 GB 容量边界、通信假设与快照 |
+| `.venv/bin/python scripts/minimax_h3_baseline.py` | 历史硬件源复现通过：FL2VA 4288 行、Ref2VA 4282 行；6 份源配置 SHA-256 校验通过 |
+| 当前默认 CLI 两条 H3 完整工作流 | FL2VA、Ref2VA 均完成；默认阶段卸载下两者 `is_valid=true` |
+| 当前 CLI 导出 | `config.snapshot.json` 包含官方规格、来源、核查日期与仿真假设；容量和带宽采用十进制 |
 
-验收环境的固定依赖见 `requirements.lock.txt`。包内 `.py/.json` 内容 SHA-256：
+依赖约束见 `pyproject.toml` 和 `requirements.lock.txt`。当前包内 `.py/.json` 内容 SHA-256：
 
 ```text
-c5e2944564941d39a90c0e73e1dcfc88b8d0b2feabc4a40e8cc46852bc2f817a
+ce86c4a70d8ca8d5166b211928362e27a19682aaeb35a450f9c2644ec2010b92
 ```
 
-该哈希与安装后的 wheel 一致；每次运行的 `provenance.json` 会重新计算，可发现公式或默认配置漂移。
+该哈希由当前源码的 `provenance()` 计算；每次运行的 `provenance.json` 会重新计算，用于发现公式或默认配置漂移。
 
-## 冻结基线
+## 当前默认运行结果
 
-| 工作流 | 基线时间 ms | 本次计算时间 ms |
-| --- | ---: | ---: |
-| MAGI I2V | 48356.312568154266 | 48356.312568154266 |
-| MAGI T2V | 46695.35382179358 | 46695.35382179358 |
-| MiniMax-H3 FL2VA | 207504.38554284864 | 207504.38554284812 |
-| MiniMax-H3 Ref2VA | 624059.5473882345 | 624059.5473882316 |
+| 工作流 | 主算子时延 ms | 硬件与工作负载 |
+| --- | ---: | --- |
+| MAGI I2V | 48356.312568154266 | B300 8 卡，1080p，Preview=100，Refiner=5 |
+| MAGI T2V | 46695.35382179358 | 同上 |
+| MiniMax-H3 FL2VA | 228193.52842317586 | 官方 950PR 规格＋仿真假设，4 卡 SP4，FP16，50 步 |
+| MiniMax-H3 Ref2VA | 685813.7461188152 | 同上，参考视频＋音频 profile |
 
-浮点累加按声明容差比较，不通过重写基线来消除差异。shape、图执行次数和身份结构按精确值核验。H3 的冻结汇总与逐算子 CSV 保存在 `baselines/minimax_h3/`。当前权重字节数来自静态配置，仓库不包含对应的 safetensors index 原件，未完成对权重索引的独立核验。
+H3 当前结果由修正后的原生仿真得到。`baselines/minimax_h3/` 中的源工程快照和逐算子 CSV 用于隔离的历史硬件复现，不作为当前默认参数的性能结果。浮点累加按声明容差比较，shape、图执行次数和身份结构按精确值核验。权重字节数来自静态配置；仓库不包含对应的 safetensors index 原件，未完成对权重索引的独立核验。
 
 ## 审查中修复的问题
 
@@ -43,3 +38,13 @@ c5e2944564941d39a90c0e73e1dcfc88b8d0b2feabc4a40e8cc46852bc2f817a
 - 包使用标准 `src` 布局，可安装到独立虚拟环境并从任意工作目录运行。
 
 时延是已建模主算子的估计，显存是明确标注的解析代理；MAGI CPU 未计时部分、H3 近似项和硬件参数单位详见两份模型说明。
+
+## A5 参数口径
+
+当前 `A5_pr_server` 采用 32 Cube／64 Vector 的 950PR 规格：Cube FP16／FP8 为
+432／865 TFLOPS，Vector FP16 为 54 TFLOPS，内存为十进制 128 GB／1600 GB/s。
+有效吞吐继续应用明确标注的仿真效率。删除未使用的 Vector FP8 数值，通信和部署限制
+保留为仿真假设，官方规格和假设分别随硬件快照导出。来源链接见
+[硬件规格与仿真假设](minimax_h3.md#硬件规格与仿真假设)。
+
+当前时延是修正参数后的原生仿真结果，不是重跑上游得到的新源基线，也不是实测性能。
