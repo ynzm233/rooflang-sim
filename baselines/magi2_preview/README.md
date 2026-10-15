@@ -1,14 +1,14 @@
-# MAGI-2 源实现复现基线
+# MAGI-2 数值回归基线
 
-基线来自原 `rooflang` 仓库 `695b239b0fd349ee08a705578893ab8fe4de1d8b` 的实际重跑，采集时工作区干净；没有读取历史 XLSX。`provenance.json` 记录源文件 SHA-256、Python/NetworkX 版本及采集方法。
+本目录保存 MAGI-2 两条工作流的冻结数值，用于检查配置、算量、时延和显存统计是否发生变化。`provenance.json` 保存采集记录、文件指纹、Python/NetworkX 版本和比较容差。
 
 | 文件 | 工作流与用途 |
 | --- | --- |
-| `i2v_default.json` / `t2v_default.json` | 原 workload 默认的 1080p、10 秒、100 次 Preview、5 次 Refiner、CP=EP=8，B300 单节点 8 卡；正式复现口径 |
+| `i2v_default.json` / `t2v_default.json` | 默认 workload：1080p、10 秒、100 次 Preview、5 次 Refiner、CP=EP=8，B300 单节点 8 卡；完整工作流回归口径 |
 | `i2v_minimal.json` / `t2v_minimal.json` | 同一默认配置，覆盖为 272p、Preview=1、Refiner=1；轻量场景，无 Refiner 阶段 |
-| `provenance.json` | 原版本、环境、源文件指纹及浮点比较容差 |
+| `provenance.json` | 采集环境、文件指纹及浮点比较容差 |
 
-在新仓库安装后执行：
+安装当前仓库后执行：
 
 ```bash
 python scripts/magi2_baseline.py
@@ -20,4 +20,4 @@ pytest -q tests/test_magi2_reproducibility.py
 
 `total_execution_time_ms` 是已建模加速器阶段时间；CPU 文本编码、媒体前后处理未计时，不能视为实测端到端时延。显存是解析工作集近似，容量结论为暂定；这些限制随基线一起冻结。
 
-维护者只有在确认公式变化后才应使用 `--capture-dir <新目录>` 生成候选基线。该选项运行当前安装的实现，不会自动重写本目录；不得用新实现生成值来替代与源实现的独立比较。
+维护者只有在确认公式变化后才应使用 `--capture-dir <新目录>` 生成候选基线。该选项运行当前安装的实现，不会自动重写本目录；应先检查与冻结基线的差异及其原因，再决定是否建立新版本基线。

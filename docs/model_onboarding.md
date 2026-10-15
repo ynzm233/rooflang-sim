@@ -71,7 +71,7 @@ python examples/toy_model.py --config toy_workload.json --output-dir outputs/toy
 2. 按阶段搭建计算图。优先复用 `src/rooflang/language/kernels/`；缺少的公式按[算子扩展说明](operator_extension.md)实现。数据边描述真实张量依赖，控制边只约束顺序。并行部署需要显式表示每 rank 的工作量及通信，不能将所有全局统计简单除以卡数。
 3. 提供 `create_workflow(hardware, config) -> Workflow`，并在模型目录的 `__init__.py` 导出。阶段回调返回 `SimulationResult` 或 `StageResult`。通过 metadata 说明生效配置、统计范围、请求计数与未建模工作；跨阶段权重驻留/卸载与状态延续需要显式处理。
 4. 在 `src/rooflang/programs/models/__init__.py` 注册模型名。正式 CLI 通过注册表加载工作流；新模型参数优先放入 `--config`，无需为每个参数增加 CLI 选项。模型专属 CSV 字段在 `src/rooflang/runtime/export_config.py` 的 `MODEL_EXTENSIONS` 声明，模型提供取值。
-5. 加入小样本解析测试、配置拒绝测试和一次完整 CLI 测试；确认结果不读取外部源仓库、权重或历史输出文件。再运行正式规模案例，并把配置、来源记录和可比较的参考结果一起提交。
+5. 加入小样本解析测试、配置拒绝测试和一次完整 CLI 测试；确认仿真仅使用安装包和显式配置，不读取权重或历史输出文件。再运行正式规模案例，并把配置、数据来源记录和可比较的参考结果一起提交。
 
 注册后的命令形式为：
 
@@ -100,12 +100,12 @@ stage = StageResult([GraphResult("denoise_step", result, multiplier=20)])
 | 工作流 | 条件分支、阶段集合、CFG 倍数、窗口数和去噪次数与模型声明一致 |
 | 内存与通信 | 流量和存储分开；共享权重去重；通信参与者/方向/消息量正确；容量判定有明确范围 |
 | 输出与复现 | 相同源码、依赖、硬件及生效配置重复运行得出相同指标；比较数值时声明浮点容差 |
-| 独立运行 | 安装后可从不同工作目录运行，不依赖原 `rooflang` 或 `model_Sim` 路径，不把参考 CSV 当成结果生成输入 |
+| 独立运行 | 安装后可从不同工作目录运行，不依赖固定的本地目录，不把参考 CSV 当成结果生成输入 |
 
 保存一组完整输出的做法见[输出文件说明](output_reference.md)。修改公式、默认值或硬件参数后，应更新来源记录并重跑参考案例；不能只更新预期数字来消除测试失败。
 
 ## 5. 当前最小集合与 MAGI 范围
 
-本仓库保留通用 DSL、仿真器、算子、硬件与导出，以及 MAGI-2 Preview 和 MiniMax-H3 建模。纯 LLM 案例和专用于它们的搜索入口不属于本次多模态最小集合。公共算子虽然可能同时用于 LLM，仍是新模型接入和内部图校验需要的基础设施。
+本仓库由通用 DSL、仿真器、算子、硬件与导出模块，以及 MAGI-2 Preview 和 MiniMax-H3 建模组成。模型案例聚焦多模态生成的性能仿真；公共算子用于模型接入和内部图校验。
 
 MAGI 的本地模型描述、公式和来源记录位于 `src/rooflang/programs/models/magi2_preview/`。当前支持 I2V/T2V、272p/540p/1080p、10 秒视频、batch=1、CP=EP∈{1,2,4,8}；540p/272p 没有精修阶段。CPU 文本前向仅统计算量和内存，未标定延迟；冷加载、后处理和封装未计时。其吞吐量是已建模加速器阶段的片段生成率，显存为解析工作集估计。详细口径见 [`magi2_preview.md`](magi2_preview.md)。

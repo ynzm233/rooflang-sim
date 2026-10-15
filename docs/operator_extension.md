@@ -14,9 +14,9 @@ python examples/toy_model.py --check
 | 只被一个模型使用的计算核 | 放入 `src/rooflang/programs/models/<model>/operators.py`，直接继承 `Kernel` |
 | 多个模型共享、语义和口径一致的计算核 | 放入 `src/rooflang/language/kernels/` 对应模块，并添加公共测试 |
 | 通信操作 | 优先复用 `language/kernels/comm.py`；新操作继承 `CommKernel` 并明确参与者、端口数、payload 和算法 |
-| 迁移来源已有分阶段/复合公式 | 可保留模型内部公式模块，再显式转换成原生 `Kernel`；参考 MAGI 的 `_cost/` 与 `bridge.py`，无需给每个新模型复制整套公式框架 |
+| 模型成本公式包含分阶段或复合计算 | 可在模型内部组织公式模块，再显式转换成 `Kernel`；参考 MAGI 的 `_cost/` 与 `bridge.py`，无需给每个新模型复制整套公式框架 |
 
-Python 算子类不需要加入一个全局算子注册表才能仿真。模型图构建函数实例化并加入 `ComputeGraph` 即可。MAGI `_cost` 的注册表属于其迁移适配层，不是新模型的强制接口。
+Python 算子类不需要加入一个全局算子注册表才能仿真。模型图构建函数实例化并加入 `ComputeGraph` 即可。MAGI `_cost` 的注册表属于模型内部成本模块，不是新模型的强制接口。
 
 ## 2. 先写算子契约与手算案例
 

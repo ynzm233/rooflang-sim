@@ -10,7 +10,7 @@
 | `stage_metrics.csv` | 每个已执行阶段一行：耗时、算量、流量、内存、调用次数和计时范围 |
 | `<model>_plan_metrics.csv` | 本次运行的总体指标、生效部署信息、有效性、阶段清单和模型扩展统计 |
 | `summary.json` | 同次导出的计划和阶段原始数值对象，适合程序处理；不包含逐算子时间线 |
-| `config.snapshot.json` / `provenance.json` | 前者记录输入、生效配置和硬件数值；后者记录包/依赖版本、来源仓库与本地包哈希，用于复现和审计 |
+| `config.snapshot.json` / `provenance.json` | 前者记录输入、生效配置和硬件数值；后者提供包版本、Python/依赖版本与包内容哈希，用于复现和审计 |
 
 例如默认 MAGI I2V 1080p 的阶段文件为 `text_encode.csv`、`image_vae_encode.csv`、`preview_denoise.csv`、`refiner_denoise.csv`、`video_vae_decode.csv`、`audio_vae_decode.csv`。T2V 不含图像编码；272p/540p 不含精修。MiniMax-H3 的阶段集合由其工作流声明。始终以本次 `plan.stages` 和 `operator_stage_csvs` 为准，不假设每个模型都有相同阶段。
 
@@ -27,7 +27,7 @@
 | `model_name`, `hardware_name`, `node_name`, `operator`, `op_type`, `shape` | 来源模型/硬件、节点身份、算子类型和输入/权重/输出的形状；模型可以提供更具体的语义标签 |
 | `execution_time_ms`, `start_ms`, `end_ms`, `device_ms` | 该核在图内的经过时间、起止时刻与本地资源执行时间；通信及资源竞争下这些量不能简单互换 |
 | `compute_ms`, `memory_ms`, `network_ms`, `bound` | 理想计算、访存、网络分项及瓶颈标签；分项不是阶段墙钟时间的可加分解 |
-| `flops`, `flops_by_dtype`, `compute_dtype`, `weight_storage_dtype`, `communicate_dtype` | 数学 FLOPs、用于计时的精度分项，以及计算/权重存储/通信精度。来源中的校准倍率可能使计时算量与数学 FLOPs 不同 |
+| `flops`, `flops_by_dtype`, `compute_dtype`, `weight_storage_dtype`, `communicate_dtype` | 数学 FLOPs、用于计时的精度分项，以及计算/权重存储/通信精度。模型配置的校准倍率可能使计时算量与数学 FLOPs 不同 |
 | `graph_label`, `graph_multiplier`, `row_kind`, `device`, `timing_status`, `timing_included` | 图来源、重复次数、行类别、CPU/加速器类别及是否计时；重复图通常只写一份行，不能只数行数估算总工作量 |
 
 `device_names` 记录设备名字，`stream` 是执行流。集合通信通常有多个参与者的 trace 条目，但导出为一个逻辑核记录，避免重复计数；不能再按设备名字数量乘一次 FLOPs 或流量。`start_ms/end_ms` 属于单次图内局部时间线，不是完整多阶段请求的绝对时间线。
@@ -35,7 +35,7 @@
 | 字段 | 含义 |
 | --- | --- |
 | `activation`, `weight_read`, `memory_traffic_bytes` | 激活读写流量、此次读取的权重流量、两者之和；都不等于显存峰值 |
-| `weight_saved`, `resident_weight_bytes` | 默认的权重存储量；模型提供来源口径时，前者保留来源的权重保存统计，后者另列关联后的物理权重大小。共享权重的复用行可有 `weight_saved=0` |
+| `weight_saved`, `resident_weight_bytes` | 默认的权重存储量；模型提供独立的权重统计时，前者使用模型声明的保存量，后者另列关联后的物理权重大小。共享权重的复用行可有 `weight_saved=0` |
 | `activation_peak_bytes_proxy` | 单核输入/输出或模型指定的激活近似；不是分配器测得的峰值，不宜逐行相加 |
 | `overlapped_compute_ms`, `overlapped_memory_ms` | 理想 Roofline 的瓶颈归属：较大项保留、较小项记 0；相等时两项均保留。不能相加重构实际耗时；通信和未计时 CPU 行留空 |
 | `kv_storage_dtype`, `kv_cache_read`, `kv_cache_saved`, `kv_cache_load` | 有对应建模事实时才出现的 KV 精度、读取、存储或加载统计；没有该统计的模型不补假零 |
@@ -96,7 +96,7 @@ MAGI 的 `request_per_second` 表示已建模加速器工作范围内的 clips/s
 
 Python 接入时应调用 `run_and_export(..., config=config, hardware=hardware)`，并让模型提供完整 `_resolved_config` 或 `_model_config`。否则输入可能为空、生效配置可能只能回退到输入，无法充分检查默认值漂移。
 
-`provenance.json` 顶层为 `package_version`、`python`、`dependencies`、`source_repositories` 和 `package_sha256`。当前依赖记录包含运行核心 `networkx`；不等于完整 Python 环境锁文件。`source_repositories` 保存迁移源仓库的版本记录；`package_sha256` 覆盖已安装 `rooflang` 包内 `.py/.json` 的相对路径及内容，包含默认配置。它不覆盖仓库所有文档、测试或输出目录，也不能代替硬件实测校准。
+复现时重点核对 `provenance.json` 中的 `package_version`、`python`、`dependencies` 和 `package_sha256`。当前依赖记录包含运行核心 `networkx`；不等于完整 Python 环境锁文件。`package_sha256` 覆盖已安装 `rooflang` 包内 `.py/.json` 的相对路径及内容，包含默认配置。它不覆盖仓库所有文档、测试或输出目录，也不能代替硬件实测校准。
 
 ## 4. 用快照重跑同一输入
 
