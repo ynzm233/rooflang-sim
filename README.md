@@ -36,6 +36,15 @@ rooflang-sim --model minimax_h3 --hardware A5_pr_server --config examples/minima
 
 MiniMax-H3 的 `fl2va` 包含首帧／尾帧／首尾两帧条件；`ref2va` 支持参考图像／视频及可选音频。当前冻结的 Ref2VA profile 使用 124 帧参考视频与音轨。MAGI 的 B300/H200 预设可从 CLI 选择；MiniMax-H3 默认使用专用 A5 预设，其他硬件需明确校准 Cube／Vector 算力及通信参数。
 
+910B3 单卡／双卡场景使用官方 Ref2VA 完整 prompt、参考视频原音轨与独立语音，处理后输入／输出均为 1344×768、124 帧、24 fps。两组采用 SP=1／2、49 次去噪、组件混合精度及逐层权重卸载（当前层＋预取 1 层，额外常驻层为 0）：
+
+```bash
+rooflang-sim --model minimax_h3 --hardware Ascend910B3_1Card --config examples/minimax_h3_ref2va_910b_sp1.json --output-dir outputs/minimax_h3_ref2va_910b3_sp1
+rooflang-sim --model minimax_h3 --hardware Ascend910B3_2Cards --config examples/minimax_h3_ref2va_910b_sp2.json --output-dir outputs/minimax_h3_ref2va_910b3_sp2
+```
+
+完整条件长度为 6915 rows，packed rows 为 82749。Host DMA 32 GB/s、HCCS 每方向 28 GB/s 等参数尚未实测校准，容量 proxy 不含 workspace；旧 910B 短 prompt／整阶段驻留结果不适用。来源、推导和限制见 [910B3 官方 Ref2VA 场景](docs/minimax_h3.md#910b3官方-ref2va-单卡与双卡)。
+
 ## 2. 新模型接入前准备什么
 
 仿真接收**结构与统计量**，不读取原始图片、视频、音频或 safetensors 权重。按下表准备可追溯数据；不要把缺失值填成零后声称分析完整。
@@ -83,7 +92,7 @@ python examples/toy_model.py --check --output-dir outputs/toy
 | `summary.json` | 与阶段／计划 CSV 对应的机器可读原始数值，保留嵌套结构和完整浮点精度 |
 | `config.snapshot.json`、`provenance.json` | 合并后的输入、生效配置／架构、硬件快照；版本信息、运行环境和包内容 SHA-256，用于追溯与复现 |
 
-时间单位是 **ms**，流量／存储单位是 **bytes**；所有当前硬件预设的 GB、GB/s 均使用十进制。A5 采用官方 950PR 的 128 GB 容量和 1600 GB/s 峰值带宽，并保留明确标注的效率与通信仿真假设；官方来源和假设随 `config.snapshot.json` 的 `hardware.metadata` 导出，详见 [A5 参数口径](docs/minimax_h3.md#硬件规格与仿真假设)。算子 CSV 中 `graph_multiplier` 表示该图执行次数，算子成本乘它才能与阶段工作量比较。`compute_ms`、`memory_ms`、`network_ms` 是资源工作量，不能直接相加当墙钟时延；有并行时也不能简单累加算子时延。阶段时延来自仿真时间线。`weight_read` 表示访问量，`weight_saved` 表示该行记账的权重；重复图不会把权重驻留倍增。
+时间单位是 **ms**，流量／存储单位是 **bytes**；硬件内部字段 GB、GB/s 均使用十进制。910B3 的 64 GiB 物理 HBM 显式换算为 `68.719476736 GB`。A5 采用官方 950PR 的 128 GB 容量和 1600 GB/s 峰值带宽，并保留明确标注的效率与通信仿真假设；官方来源和假设随 `config.snapshot.json` 的 `hardware.metadata` 导出，详见 [A5 参数口径](docs/minimax_h3.md#硬件规格与仿真假设)。算子 CSV 中 `graph_multiplier` 表示该图执行次数，算子成本乘它才能与阶段工作量比较。`compute_ms`、`memory_ms`、`network_ms` 是资源工作量，不能直接相加当墙钟时延；有并行时也不能简单累加算子时延。阶段时延来自仿真时间线。`weight_read` 表示访问量，`weight_saved` 表示该行记账的权重；重复图不会把权重驻留倍增。
 
 `timing_included=false` 或空时延表示未建模，**不表示零耗时**。`peak_activation_bytes` 是算子级代理；模型提供的 `peak_stage_memory_bytes` 是解析工作集。`is_valid=true` 表示在明确假设下容量可行，不等同于真实部署保证。只跑一个阶段时，计划汇总仅代表所选阶段。
 
@@ -108,7 +117,7 @@ python scripts/minimax_h3_baseline.py
 | MiniMax-H3 FL2VA | 228193.52842317586 | 官方 950PR 规格＋仿真假设，4 卡 SP4，FP16，50 步 |
 | MiniMax-H3 Ref2VA | 685813.7461188152 | 同上，参考视频＋音频 profile |
 
-以上都是**已建模部分的预测值，不是实测端到端时延**。MAGI 的 CPU 文本编码仅计 FLOPs／内存，未标定延迟；MiniMax-H3 对 ConvTranspose、GroupNorm、FlashAttention 访存和显存峰值采用近似建模；媒体处理、阶段权重搬运等遗漏项见 [MAGI 边界](docs/magi2_preview.md) 与 [MiniMax-H3 边界](docs/minimax_h3.md)。修改公式时，应新增带版本的基线，并记录变化原因和适用范围。
+以上都是**已建模部分的预测值，不是实测端到端时延**。MAGI 的 CPU 文本编码仅计 FLOPs／内存，未标定延迟；MiniMax-H3 对 ConvTranspose、GroupNorm、FlashAttention 访存和显存峰值采用近似建模；媒体处理等遗漏项、逐层卸载场景的显式搬运范围见 [MAGI 边界](docs/magi2_preview.md) 与 [MiniMax-H3 边界](docs/minimax_h3.md)。修改公式时，应新增带版本的基线，并记录变化原因和适用范围。
 
 ## 6. 仓库结构与接口
 

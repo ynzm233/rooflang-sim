@@ -12,22 +12,54 @@ from .config import MiniMaxH3MultimodalConfig
 from .bridge import build_component, component_nodes
 
 ROOT = Path(__file__).parent
+OFFICIAL_EXECUTION_PROFILE = 'sglang_v0_5_21'
+OFFICIAL_EXECUTION_COMMIT = 'e00930c5489053f26d86b179cee0d087f846acbb'
 
 def _load(name):
     return json.loads((ROOT/name).read_text())
 
 def resolve_config(overrides):
     overrides=deepcopy(overrides)
+    execution_profile = overrides.pop('execution_profile', 'legacy')
+    if execution_profile not in ('legacy', OFFICIAL_EXECUTION_PROFILE):
+        raise ValueError('Unknown MiniMax-H3 execution_profile')
+    official = execution_profile == OFFICIAL_EXECUTION_PROFILE
+    layerwise = overrides.pop('layerwise_offload', None)
+    if official:
+        layerwise = {'prefetch_size': 1, 'resident_layers': 0} if layerwise is None else layerwise
+        if (not isinstance(layerwise, dict)
+                or set(layerwise) != {'prefetch_size', 'resident_layers'}
+                or type(layerwise['prefetch_size']) is not int
+                or layerwise['prefetch_size'] not in (0, 1)
+                or type(layerwise['resident_layers']) is not int
+                or layerwise['resident_layers'] != 0):
+            raise ValueError('layerwise_offload requires prefetch_size=0/1 and resident_layers=0')
+    elif layerwise is not None:
+        raise ValueError('layerwise_offload requires execution_profile=sglang_v0_5_21')
+    if 'request_source' in overrides and not isinstance(overrides['request_source'], dict):
+        raise ValueError('request_source must be an object')
+    # Prompt text is provenance; this analytical model does not run a tokenizer.
+    if 'prompt' in overrides:
+        if not isinstance(overrides['prompt'], str) or not overrides['prompt'].strip():
+            raise ValueError('MiniMax-H3 prompt must be a non-empty string')
+        if 'text_condition_rows' not in overrides:
+            raise ValueError('Provide measured text_condition_rows with prompt; no tokenizer is run')
+    if 'fps' in overrides and (type(overrides['fps']) is not int or overrides['fps'] != 24):
+        raise ValueError('MiniMax-H3 currently requires fps=24 for reference and target video')
     for key in ('batch_size','dp','tp','cp','pp'):
         value = overrides.pop(key, 1)
         if type(value) is not int or value != 1:
             raise ValueError(f'MiniMax-H3 currently requires {key}=1')
-    if overrides.pop('compute_dtype','fp16') != 'fp16':
-        raise ValueError('MiniMax-H3 reproduction supports compute_dtype=fp16')
+    compute_dtype = 'bf16' if official else 'fp16'
+    if overrides.pop('compute_dtype', compute_dtype) != compute_dtype:
+        raise ValueError(f'MiniMax-H3 {execution_profile} supports compute_dtype={compute_dtype}')
     sp=overrides.pop('sp',4)
     if type(sp) is not int or sp not in (1,2,4,8):
         raise ValueError('MiniMax-H3 SP must be one of 1,2,4,8')
     data=_load('workload.json')
+    if official:
+        data['num_inference_steps'] = 49
+        data['assume_stage_unload'] = False
     workflow=overrides.get('workflow',data['workflow'])
     if workflow not in data['workflows']:
         raise ValueError('MiniMax-H3 workflow must be fl2va or ref2va')
@@ -38,10 +70,13 @@ def resolve_config(overrides):
     for key in ('frames','height','width'):
         if key in overrides: target[key]=overrides.pop(key)
     if 'target' in overrides: target.update(overrides.pop('target'))
-    allowed={'workflow','num_inference_steps','assume_stage_unload','workflows','type'}
+    allowed={'workflow','num_inference_steps','assume_stage_unload','workflows','type','prompt','fps','request_source'}
     unknown=set(overrides)-allowed
     if unknown: raise ValueError(f'Unknown MiniMax-H3 options: {sorted(unknown)}')
     data.update(overrides); data['target']=target
+    if official:
+        data.update(execution_profile=execution_profile, compute_dtype=compute_dtype,
+                    layerwise_offload=layerwise)
     for key in ('frames', 'height', 'width'):
         if type(data['target'][key]) is not int:
             raise ValueError(f'target.{key} must be an integer')
@@ -73,12 +108,25 @@ def _graph_stats(result):
 def create_workflow(hardware, config):
     cfg,sp,resolved=resolve_config(config)
     architecture=_load('architecture.json'); mm=cfg.runtime_multimodal_config()
+    official = resolved.get('execution_profile') == OFFICIAL_EXECUTION_PROFILE
+    compute_dtype = 'bf16' if official else 'fp16'
+    latency_scope = ('modeled_main_operators_plus_layerwise_weight_transfer'
+                     if official else 'modeled_main_operators_only')
+    if official:
+        architecture = deepcopy(architecture)
+        qwen = next(c for c in architecture['components'] if c['name'] == 'qwen_text')
+        qwen['layer_blocks'][0]['repeat_times'] = 50
+        mm.update(execution_profile=OFFICIAL_EXECUTION_PROFILE,
+                  layerwise_offload=deepcopy(resolved['layerwise_offload']),
+                  compute_dtype=compute_dtype)
     devices=[n for n in hardware.nodes if isinstance(n,Compute) and n.kind=='gpu']
     if len(devices)<sp: raise ValueError(f'MiniMax-H3 SP={sp} requires at least {sp} devices')
     for device in devices[:sp]:
-        missing={'fp16:cube','fp16:vector'}-set(device.tflops)
-        if missing: raise ValueError('MiniMax-H3 requires explicit fp16:cube and fp16:vector throughput; use A5_pr_server or provide both')
-        if any(not math.isfinite(device.tflops[key]) or device.tflops[key] <= 0 for key in ('fp16:cube', 'fp16:vector')):
+        required = ({f'{dtype}:{unit}' for dtype in ('bf16', 'fp16', 'fp32') for unit in ('cube', 'vector')}
+                    if official else {'fp16:cube', 'fp16:vector'})
+        missing=required-set(device.tflops)
+        if missing: raise ValueError(f'MiniMax-H3 requires explicit throughput for {sorted(missing)}')
+        if any(not math.isfinite(device.tflops[key]) or device.tflops[key] <= 0 for key in required):
             raise ValueError('MiniMax-H3 Cube/Vector throughput must be finite and positive')
         fabric = hardware.find_fabric(device, hardware.find_local_memory(device))
         read_bw, write_bw = fabric.dst_to_src_bandwidth_gbs, fabric.src_to_dst_bandwidth_gbs
@@ -99,7 +147,7 @@ def create_workflow(hardware, config):
         jobs['condition_vae_encode'].append(('video_vae_encoder',f'condition_video_{index}',1,updates,chunks*tiles,False))
     for index,length in enumerate(mm['audio_reference_latents']):
         jobs['condition_vae_encode'].append(('audio_vae_encoder',f'condition_audio_{index}',1,{'audio_reference_latents':[length]},1,False))
-    jobs['transformer_text_refiner']=[('transformer_text_refiner','transformer_text_refiner',mm['text_rows'],{},cfg.num_inference_steps,False)]
+    jobs['transformer_text_refiner']=[('transformer_text_refiner','transformer_text_refiner',mm['text_rows'],{},1 if official else cfg.num_inference_steps,False)]
     jobs['transformer_denoise']=[(transformer,'transformer_denoise',mm['packed_rows'],{},cfg.num_inference_steps,True)]
     h,w,tiles=video_vae_tiles(mm['target_height'],mm['target_width'])
     calls=(math.ceil((mm['target_latent_frames']+3)/5)-1)*tiles
@@ -108,14 +156,38 @@ def create_workflow(hardware, config):
 
     def run_stage(name):
         result=StageResult(); weights={}; peak=0
+        fixed_weights={}; streamed_weights={}; layer_counts={}
+        transient_peak=0; weight_peak=0; h2d_bytes=0; copy_ms=0; exposed_ms=0
         for component,label,seq,updates,multiplier,distributed in jobs[name]:
             graph,placement=build_component(component,architecture,{**mm,**updates},seq,hardware,sp if distributed else 1)
             simulation=simulate(graph,placement,hardware)
             result.graphs.append(GraphResult(label,simulation,multiplier))
             stats=_graph_stats(simulation)
             weights.setdefault(component,stats['weight']);peak=max(peak,stats['activation'])
+            if official:
+                from .offload import graph_stats
+                offload = graph_stats(simulation, hardware)
+                fixed_weights[component] = max(fixed_weights.get(component, 0), offload['fixed_weight_bytes'])
+                streamed_weights[component] = max(streamed_weights.get(component, 0), offload['streamed_weight_bytes'])
+                layer_counts[component] = max(layer_counts.get(component, 0), offload['offloaded_layer_count'])
+                weight_peak = max(weight_peak, offload['weight_peak_bytes'])
+                transient_peak = max(transient_peak, offload['weight_peak_bytes']
+                                     - offload['fixed_weight_bytes'] + stats['activation'])
+                h2d_bytes += offload['host_to_device_bytes'] * multiplier
+                copy_ms += offload['copy_time_ms'] * multiplier
+                exposed_ms += offload['exposed_transfer_time_ms'] * multiplier
         result.metrics.update(total_weight_bytes=sum(weights.values()),peak_activation_bytes=peak,
-            timing_status='modeled_main_operators_only')
+            timing_status=latency_scope)
+        if official:
+            result.metrics.update(
+                component_fixed_weight_bytes=fixed_weights,
+                component_streamed_weight_bytes=streamed_weights,
+                fixed_weight_bytes=sum(fixed_weights.values()),
+                streamed_weight_bytes=sum(streamed_weights.values()),
+                weight_peak_bytes=weight_peak, layerwise_transient_peak_bytes=transient_peak,
+                host_to_device_bytes=h2d_bytes, copy_time_ms=copy_ms,
+                exposed_transfer_time_ms=exposed_ms,
+                offloaded_layer_count=sum(layer_counts.values()))
         return result
 
     def summarize(results):
@@ -127,6 +199,47 @@ def create_workflow(hardware, config):
             'transformer_forward_count':cfg.num_inference_steps if 'transformer_denoise' in results else 0,
             'persistent_tensor_bytes':persistent,'persistent_tensor_total_bytes':ptotal,
             'shape_summary':mm['shape_summary'],'transformer_component':transformer}
+        if official:
+            fixed_weights={}; streamed_weights={}
+            for stage in results.values():
+                for component, value in stage.metrics['component_fixed_weight_bytes'].items():
+                    fixed_weights[component] = max(fixed_weights.get(component, 0), value)
+                for component, value in stage.metrics['component_streamed_weight_bytes'].items():
+                    streamed_weights[component] = max(streamed_weights.get(component, 0), value)
+            fixed_total = sum(fixed_weights.values())
+            for stage in results.values():
+                stage.metrics['peak_memory_bytes'] = (
+                    fixed_total + stage.metrics['layerwise_transient_peak_bytes'] + ptotal)
+            peak_memory = max(stage.metrics['peak_memory_bytes'] for stage in results.values())
+            capacity = min(hardware.find_local_memory(d).capacity_gb*1e9 for d in devices[:sp])
+            valid = peak_memory <= capacity
+            time_ms = sum(g.result.total_time_us / 1000 * g.multiplier
+                          for stage in results.values() for g in stage.graphs)
+            rps = 1000 / time_ms if complete and time_ms > 0 else None
+            summary.update(
+                refiner_forward_count=1 if 'transformer_text_refiner' in results else 0,
+                qwen_text_layer_count=50,
+                memory_scope='selected_workflow' if complete else 'selected_stages_only',
+                memory_validity_basis='native_layerwise_weights_plus_activation_proxy',
+                component_fixed_weight_bytes=fixed_weights,
+                component_streamed_weight_bytes=streamed_weights,
+                fixed_weight_bytes=fixed_total,
+                streamed_weight_bytes=sum(streamed_weights.values()),
+                peak_stage_memory_bytes=peak_memory, fits_peak_stage_memory=valid,
+                is_valid=valid,
+                fail_reason='' if valid else 'Native layerwise weights plus activation proxy exceeds HBM capacity',
+                all_resident_weight_bytes=None, all_resident_memory_bytes=None,
+                fits_all_resident_memory=None, indexed_known_weight_bytes=None,
+                audio_vae_weight_proxy_bytes=None,
+                operator_graph_weight_proxy_bytes=sum(s.metrics['total_weight_bytes'] for s in results.values()),
+                host_to_device_bytes=sum(s.metrics['host_to_device_bytes'] for s in results.values()),
+                copy_time_ms=sum(s.metrics['copy_time_ms'] for s in results.values()),
+                exposed_transfer_time_ms=sum(s.metrics['exposed_transfer_time_ms'] for s in results.values()),
+                offloaded_layer_count=sum(s.metrics['offloaded_layer_count'] for s in results.values()),
+                packed_rows_per_second=rps*mm['packed_rows'] if rps is not None else None,
+                transformer_processed_rows_per_second=(
+                    rps*mm['packed_rows']*cfg.num_inference_steps if rps is not None else None))
+            return summary
         if not complete:
             known = architecture['indexed_weight_bytes']
             phase_weights = {'qwen_vision_encode': known['qwen_conditioner'],
@@ -185,14 +298,36 @@ def create_workflow(hardware, config):
             transformer_processed_rows_per_second=rps*mm['packed_rows']*cfg.num_inference_steps)
         return summary
 
-    return Workflow({name:partial(run_stage,name) for name in jobs},{
+    metadata={
         'workflow':cfg.workflow,'batch_size':1,'prompt_len':mm['text_rows'],'total_cards':sp,
-        'main_sp':sp,'main_cp':1,'main_tp':1,'main_dp':1,'compute_dtype':'fp16','weight_storage_dtype':'fp16',
+        'main_sp':sp,'main_cp':1,'main_tp':1,'main_dp':1,'compute_dtype':compute_dtype,'weight_storage_dtype':compute_dtype,
         'num_diffusion_steps':cfg.num_inference_steps,'cfg':1,'resolved_shape_summary':mm['shape_summary'],
         'assume_stage_unload':cfg.assume_stage_unload,
-        '_resolved_config':{'workload':resolved,'architecture':architecture,'sp':sp,'batch_size':1,'compute_dtype':'fp16'},
+        '_resolved_config':{'workload':resolved,'architecture':architecture,'sp':sp,'batch_size':1,'compute_dtype':compute_dtype},
         'source_commit':_load('SOURCES.json')['source_commit'],
-        'latency_scope':'modeled_main_operators_only','compute_scope':'critical_rank_per_stage_not_global_device_sum',
+        'latency_scope':latency_scope,'compute_scope':'critical_rank_per_stage_not_global_device_sum',
         'timing_backend':'rooflang_discrete_event_simulator','end_to_end_timing_complete':False,
         'memory_status':'indexed_weights_plus_persistent_plus_peak_operator_activation_proxy',
-        'capacity_verdict_is_provisional':True},summarize)
+        'capacity_verdict_is_provisional':True}
+    if official:
+        metadata.update(
+            execution_profile=OFFICIAL_EXECUTION_PROFILE,
+            execution_source_commit=OFFICIAL_EXECUTION_COMMIT,
+            request_source=deepcopy(resolved.get('request_source', {})),
+            layerwise_offload=deepcopy(resolved['layerwise_offload']),
+            stage_unload_applied=False,
+            offload_transfer_scope='per_critical_rank_not_global_device_sum',
+            offload_schedule={
+                'read_only_cpu_master_weights':True,
+                'prefetch_across_graph_invocations':False,
+                'first_layer_load_may_overlap_component_input_ops':True,
+                'shared_dma_compute_hbm_contention':False,
+                'capacity_keeps_non_layer_weights_resident':True},
+            qwen_text_layer_count=50,
+            memory_status='native_layerwise_weights_plus_persistent_plus_peak_operator_activation_proxy',
+            stage_precision={
+                'qwen_vision_encode':'bf16', 'qwen_text_condition':'bf16',
+                'condition_vae_encode':'fp32', 'transformer_text_refiner':'bf16',
+                'transformer_denoise':'bf16', 'video_vae_decode':'fp16',
+                'audio_vae_decode':'fp32'})
+    return Workflow({name:partial(run_stage,name) for name in jobs}, metadata, summarize)

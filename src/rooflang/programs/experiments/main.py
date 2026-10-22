@@ -8,6 +8,7 @@ from pathlib import Path
 
 from rooflang.programs.models import MODEL_NAMES, load_model
 from rooflang.programs.experiments.run_and_export import run_and_export
+from rooflang.programs.presets.ascend910b import Ascend910B3
 from rooflang.programs.presets.b300 import B300Cluster, B300SuperChip
 from rooflang.programs.presets.h200 import H200Cluster, H200SuperChip
 from rooflang.runtime.stages import StageResult
@@ -25,6 +26,11 @@ HARDWARE_MAP = {
     "H200SuperChip": H200SuperChip,
     "A5_pr_server": _a5,
     "a5_pr_server": _a5,
+    "Ascend910B3_1Card": Ascend910B3,
+    "Ascend910B3_2Cards": lambda: Ascend910B3(n_devices=2),
+    # Compatibility aliases use the corrected B3 specification.
+    "Ascend910B1Card": Ascend910B3,
+    "Ascend910B2Cards": lambda: Ascend910B3(n_devices=2),
 }
 
 

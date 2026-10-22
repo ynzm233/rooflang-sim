@@ -89,9 +89,27 @@ def test_partial_stage_does_not_claim_full_workflow_capacity():
     {'compute_dtype':'fp32'}, {'weight_storage_dtype':'fp8'}, {'batch_size':True},
     {'num_inference_steps':1.5}, {'assume_stage_unload':'false'},
     {'text_condition_rows':4.5}, {'target':{'height':768.5}},
+    {'prompt':'Generate a  cinematic video.'}, {'prompt':42,'text_condition_rows':6113},
+    {'fps':30}, {'fps':24.0},
 ])
 def test_rejects_unsupported_or_coerced_configuration(config):
     with pytest.raises(ValueError): create_workflow(A5PRServer(),config)
+
+
+def test_prompt_provenance_preserves_whitespace_and_explicit_processor_rows():
+    from rooflang.runtime.reproducibility import config_snapshot
+
+    config = {'workflow':'ref2va', 'prompt':'Generate a  cinematic video.',
+              'text_condition_rows':6113, 'fps':24}
+    hardware = A5PRServer()
+    workflow = create_workflow(hardware, config)
+    snapshot = config_snapshot(workflow, model_name='minimax_h3',
+        hardware_name='A5_pr_server', stage='all', config=config, hardware=hardware)
+    workload = snapshot['resolved_config']['workload']
+    assert workload['prompt'] == config['prompt']
+    assert workload['fps'] == 24
+    assert workload['workflows']['ref2va']['text_condition_rows'] == 6113
+    assert workflow.metadata['prompt_len'] == 6113
 
 
 def test_hardware_validation():

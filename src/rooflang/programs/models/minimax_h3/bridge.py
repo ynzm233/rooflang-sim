@@ -7,7 +7,8 @@ from rooflang.language.hardware.component import Compute
 from rooflang.language.placement import Placement
 from rooflang.language.kernels.comm import CommKernel
 from rooflang.programs.models.magi2_preview.bridge import AnalyticalKernel, _tensor
-from .compat import BlockFactory, Parallel, OpType
+from .compat import BlockFactory, Parallel, OpType, QuantConfig
+from .offload import apply_layerwise_offload
 from . import blocks, mlp, embedding  # register the finite H3 recipe set
 
 class H3Kernel(AnalyticalKernel):
@@ -54,6 +55,14 @@ def component_nodes(component, architecture, mm, seq_len, sp=1):
                         block=BlockFactory.registry[bc['type']](bc['type'],bc,cfg)
                         nodes.extend(block.build(context,layer))
                     layer += 1
+    if mm.get('execution_profile') == 'sglang_v0_5_21':
+        dtype = ('fp32' if component in ('video_vae_encoder', 'audio_vae_encoder', 'audio_vae_decoder')
+                 else 'fp16' if component == 'video_vae_decoder' else 'bf16')
+        quant = QuantConfig(dtype, dtype, dtype, dtype)
+        for node in nodes:
+            node.operator.quant_config = quant
+            for field in ('compute_dtype', 'weight_storage_dtype', 'kv_storage_dtype', 'communicate_dtype'):
+                setattr(node.operator, field, dtype)
     return nodes
 
 
@@ -69,12 +78,13 @@ def build_component(component, architecture, mm, seq_len, hardware, sp=1):
         meta={'node_name':node.node_name,'operator':type(op).__name__,'module':node.module.value,
               'layer_idx':node.layer_idx,'block_id':node.block_id,'tag_mask':node.tag_mask,
               'shape':asdict(op.params) if is_dataclass(op.params) else {},
-              'compute_dtype':'fp16','weight_storage_dtype':'fp16','communicate_dtype':'fp16',
-              'kv_storage_dtype':'fp16','component':component,'recipe_node_index':index,
+              'compute_dtype':op.compute_dtype,'weight_storage_dtype':op.weight_storage_dtype,
+              'communicate_dtype':op.communicate_dtype,
+              'kv_storage_dtype':op.kv_storage_dtype,'component':component,'recipe_node_index':index,
               'compute_scope':'critical_rank','source_weight_saved':details.get('weight_saved',0),
               'activation_peak_bytes_proxy':details.get('activation',0)}
         if node.op_type is OpType.COMMUNICATION:
-            world=math.prod(op.net_list); payload=op.op_size*2
+            world=math.prod(op.net_list); payload=op.op_size*op.quant_config.get_communicate_size()
             kernel=H3Collective(payload,world);kernel.csv_metadata=meta
             for rank,device in enumerate(devices[:world]):
                 mem=hardware.find_local_memory(device)
@@ -95,5 +105,8 @@ def build_component(component, architecture, mm, seq_len, hardware, sp=1):
             placement.set_kernel_device(kernel,devices[0])
             previous_compute=kernel
         previous=kernel
+    if mm.get('layerwise_offload'):
+        apply_layerwise_offload(graph, placement, hardware, component,
+                                prefetch_size=mm['layerwise_offload']['prefetch_size'])
     graph.validate();placement.validate(graph)
     return graph,placement

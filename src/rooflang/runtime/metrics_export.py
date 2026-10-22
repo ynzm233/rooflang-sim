@@ -121,7 +121,8 @@ def _operator_rows(result, stage, model_name, hardware_name):
         if row.get("source_weight_saved") is not None:
             # Source accounting may charge shared weights only at their owner.
             # Preserve the physical tensor size separately for memory analysis.
-            row["resident_weight_bytes"] = float(kernel.weight_bytes)
+            row["resident_weight_bytes"] = float(sum(
+                tensor.storage_bytes for tensor in kernel.weights.values()))
             row["weight_saved"] = row["source_weight_saved"]
         yield row
 

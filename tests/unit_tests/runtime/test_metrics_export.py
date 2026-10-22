@@ -246,6 +246,31 @@ def test_resident_weights_deduplicate_per_device(tmp_path, weight_id):
     assert float(stage["total_mem_bytes"]) == 96
 
 
+def test_weight_views_keep_logical_reads_without_resident_storage(tmp_path):
+    gpu = Compute("gpu0")
+    kernels = []
+    for storage_bytes in (0, None):
+        kernel = SyntheticKernel(weights={
+            "w": Tensor("bf16", (4, 4), storage_bytes=storage_bytes),
+        })
+        kernel.weight_read_fraction = Fraction(1, 4)
+        kernel.csv_metadata = {"source_weight_saved": 32}
+        kernels.append(kernel)
+    result = SimulationResult(
+        [_entry(kernel, gpu) for kernel in kernels], 1000, {},
+    )
+
+    export_metrics({"forward": result}, tmp_path, model_name="toy")
+
+    view, resident = _rows(tmp_path / "forward.csv")
+    assert float(view["resident_weight_bytes"]) == 0
+    assert float(resident["resident_weight_bytes"]) == 32
+    for row in (view, resident):
+        assert float(row["weight_saved"]) == 32
+        assert float(row["weight_read"]) == 8
+        assert float(row["memory_traffic_bytes"]) == 8
+
+
 def test_collective_participant_traces_are_exported_once(tmp_path):
     collective = AllReduce(total_bytes=100, world=2, dtype="bf16")
     collective.inputs = {f"x{rank}": Tensor("bf16", (50,)) for rank in range(2)}
