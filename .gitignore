@@ -8,3 +8,6 @@ dist/
 outputs/
 .coverage
 .DS_Store
+.codegraph/
+.serena/
+.vscode/
