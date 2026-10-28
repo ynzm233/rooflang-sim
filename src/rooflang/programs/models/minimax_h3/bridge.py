@@ -7,6 +7,10 @@ from rooflang.language.hardware.component import Compute
 from rooflang.language.placement import Placement
 from rooflang.language.kernels.comm import CommKernel
 from rooflang.programs.models.magi2_preview.bridge import AnalyticalKernel, _tensor
+from rooflang.programs.models.magi2_preview.operators import (
+    FlashAttentionOperator, NpuFusedInferAttentionScoreOperator,
+)
+from rooflang.programs.presets.ascend910b import Ascend910B3
 from .compat import BlockFactory, Parallel, OpType, QuantConfig
 from .offload import apply_layerwise_offload
 from . import blocks, mlp, embedding  # register the finite H3 recipe set
@@ -68,11 +72,33 @@ def component_nodes(component, architecture, mm, seq_len, sp=1):
 
 def build_component(component, architecture, mm, seq_len, hardware, sp=1):
     devices=sorted((n for n in hardware.nodes if isinstance(n,Compute) and n.kind=='gpu'),key=lambda n:n.name)
+    ascend_fia = (isinstance(hardware, Ascend910B3)
+                  and mm.get('attention_backend', 'auto') == 'auto')
+    used_rows = seq_len
+    if isinstance(hardware, Ascend910B3) and component == 'transformer_text_refiner':
+        # Pinned SGLang refines the full prompt on each rank without Ulysses.
+        sp = 1
+    elif ascend_fia and component in ('transformer', 'transformer_ref'):
+        # packed_sequence.py uses cu_seqlens=[0, used, ceil(used/64)*64].
+        seq_len = (seq_len + 63) // 64 * 64
     nodes=component_nodes(component,architecture,mm,seq_len,sp)
     graph=ComputeGraph(); placement=Placement(hardware,graph)
     previous=previous_compute=None
     for index,node in enumerate(nodes):
         op=node.operator
+        if ascend_fia and isinstance(op, FlashAttentionOperator):
+            p = op.params
+            packed = component in ('transformer', 'transformer_ref', 'transformer_text_refiner')
+            boundaries = [used_rows] + ([p.q_len] if p.q_len > used_rows else [])
+            op = NpuFusedInferAttentionScoreOperator(
+                batch_size=p.batch_size, num_heads=p.num_heads,
+                num_key_value_heads=p.kv_heads, head_dim=p.head_dim,
+                q_len=p.q_len, kv_len=p.kv_len,
+                input_layout='TND' if packed else 'BNSD',
+                actual_seq_lengths=boundaries if packed else None,
+                actual_seq_lengths_kv=boundaries.copy() if packed else None,
+                scale=p.head_dim ** -0.5, causal=p.causal,
+                quant_config=op.quant_config)
         if op.params is not None: op.params.validate()
         details=op.get_memory_details()
         meta={'node_name':node.node_name,'operator':type(op).__name__,'module':node.module.value,
@@ -83,6 +109,12 @@ def build_component(component, architecture, mm, seq_len, hardware, sp=1):
               'kv_storage_dtype':op.kv_storage_dtype,'component':component,'recipe_node_index':index,
               'compute_scope':'critical_rank','source_weight_saved':details.get('weight_saved',0),
               'activation_peak_bytes_proxy':details.get('activation',0)}
+        if isinstance(op, NpuFusedInferAttentionScoreOperator):
+            meta.update(source_operator='torch.ops.npu.npu_fused_infer_attention_score',
+                        atten_mask_shape=op.atten_mask_shape, assumption=op.assumption,
+                        attention_pairs=op.valid_pairs,
+                        attention_alignment=('pinned_sglang_dit' if packed
+                                             else 'analytical_fia_substitution'))
         if node.op_type is OpType.COMMUNICATION:
             world=math.prod(op.net_list); payload=op.op_size*op.quant_config.get_communicate_size()
             kernel=H3Collective(payload,world);kernel.csv_metadata=meta

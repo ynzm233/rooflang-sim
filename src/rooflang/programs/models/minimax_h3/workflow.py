@@ -10,6 +10,7 @@ from rooflang.programs.experiments.workflow import Workflow
 from rooflang.runtime.stages import GraphResult, StageResult
 from .config import MiniMaxH3MultimodalConfig
 from .bridge import build_component, component_nodes
+from rooflang.programs.presets.ascend910b import Ascend910B3
 
 ROOT = Path(__file__).parent
 OFFICIAL_EXECUTION_PROFILE = 'sglang_v0_5_21'
@@ -20,6 +21,9 @@ def _load(name):
 
 def resolve_config(overrides):
     overrides=deepcopy(overrides)
+    attention_backend = overrides.pop('attention_backend', 'auto')
+    if attention_backend not in ('auto', 'flash_attention'):
+        raise ValueError('attention_backend must be auto or flash_attention')
     execution_profile = overrides.pop('execution_profile', 'legacy')
     if execution_profile not in ('legacy', OFFICIAL_EXECUTION_PROFILE):
         raise ValueError('Unknown MiniMax-H3 execution_profile')
@@ -27,13 +31,13 @@ def resolve_config(overrides):
     layerwise = overrides.pop('layerwise_offload', None)
     if official:
         layerwise = {'prefetch_size': 1, 'resident_layers': 0} if layerwise is None else layerwise
-        if (not isinstance(layerwise, dict)
+        if layerwise is not False and (not isinstance(layerwise, dict)
                 or set(layerwise) != {'prefetch_size', 'resident_layers'}
                 or type(layerwise['prefetch_size']) is not int
                 or layerwise['prefetch_size'] not in (0, 1)
                 or type(layerwise['resident_layers']) is not int
                 or layerwise['resident_layers'] != 0):
-            raise ValueError('layerwise_offload requires prefetch_size=0/1 and resident_layers=0')
+            raise ValueError('layerwise_offload requires false or prefetch_size=0/1 and resident_layers=0')
     elif layerwise is not None:
         raise ValueError('layerwise_offload requires execution_profile=sglang_v0_5_21')
     if 'request_source' in overrides and not isinstance(overrides['request_source'], dict):
@@ -57,6 +61,7 @@ def resolve_config(overrides):
     if type(sp) is not int or sp not in (1,2,4,8):
         raise ValueError('MiniMax-H3 SP must be one of 1,2,4,8')
     data=_load('workload.json')
+    data['attention_backend'] = attention_backend
     if official:
         data['num_inference_steps'] = 49
         data['assume_stage_unload'] = False
@@ -108,10 +113,12 @@ def _graph_stats(result):
 def create_workflow(hardware, config):
     cfg,sp,resolved=resolve_config(config)
     architecture=_load('architecture.json'); mm=cfg.runtime_multimodal_config()
+    mm['attention_backend'] = resolved['attention_backend']
     official = resolved.get('execution_profile') == OFFICIAL_EXECUTION_PROFILE
+    layerwise_enabled = official and bool(resolved['layerwise_offload'])
     compute_dtype = 'bf16' if official else 'fp16'
     latency_scope = ('modeled_main_operators_plus_layerwise_weight_transfer'
-                     if official else 'modeled_main_operators_only')
+                     if layerwise_enabled else 'modeled_main_operators_only')
     if official:
         architecture = deepcopy(architecture)
         qwen = next(c for c in architecture['components'] if c['name'] == 'qwen_text')
@@ -220,16 +227,21 @@ def create_workflow(hardware, config):
                 refiner_forward_count=1 if 'transformer_text_refiner' in results else 0,
                 qwen_text_layer_count=50,
                 memory_scope='selected_workflow' if complete else 'selected_stages_only',
-                memory_validity_basis='native_layerwise_weights_plus_activation_proxy',
+                memory_validity_basis=('native_layerwise_weights_plus_activation_proxy' if layerwise_enabled
+                                       else 'native_resident_weights_plus_activation_proxy'),
                 component_fixed_weight_bytes=fixed_weights,
                 component_streamed_weight_bytes=streamed_weights,
                 fixed_weight_bytes=fixed_total,
                 streamed_weight_bytes=sum(streamed_weights.values()),
                 peak_stage_memory_bytes=peak_memory, fits_peak_stage_memory=valid,
                 is_valid=valid,
-                fail_reason='' if valid else 'Native layerwise weights plus activation proxy exceeds HBM capacity',
-                all_resident_weight_bytes=None, all_resident_memory_bytes=None,
-                fits_all_resident_memory=None, indexed_known_weight_bytes=None,
+                fail_reason=('' if valid else
+                             'Native layerwise weights plus activation proxy exceeds HBM capacity' if layerwise_enabled else
+                             'Resident weights plus activation proxy exceeds HBM capacity'),
+                all_resident_weight_bytes=fixed_total if not layerwise_enabled and complete else None,
+                all_resident_memory_bytes=peak_memory if not layerwise_enabled and complete else None,
+                fits_all_resident_memory=valid if not layerwise_enabled and complete else None,
+                indexed_known_weight_bytes=None,
                 audio_vae_weight_proxy_bytes=None,
                 operator_graph_weight_proxy_bytes=sum(s.metrics['total_weight_bytes'] for s in results.values()),
                 host_to_device_bytes=sum(s.metrics['host_to_device_bytes'] for s in results.values()),
@@ -309,6 +321,27 @@ def create_workflow(hardware, config):
         'timing_backend':'rooflang_discrete_event_simulator','end_to_end_timing_complete':False,
         'memory_status':'indexed_weights_plus_persistent_plus_peak_operator_activation_proxy',
         'capacity_verdict_is_provisional':True}
+    if isinstance(hardware, Ascend910B3) and mm['attention_backend'] == 'auto':
+        attention_model = {
+            'operator': 'npu_fused_infer_attention_score',
+            'dit_source_commit': OFFICIAL_EXECUTION_COMMIT,
+            'dit_input_layout': 'TND',
+            'dit_actual_seq_lengths': sorted({mm['packed_rows'], (mm['packed_rows'] + 63) // 64 * 64}),
+            'text_refiner_sp': 1,
+            'other_attention_layout': 'BNSD',
+            'non_dit_scope': 'analytical_substitution_not_runtime_verified',
+            'kernel_efficiency_calibrated': False,
+        }
+    else:
+        attention_model = {
+            'operator': 'flash_attention',
+            'scope': 'repository_generic_fa_cost_model',
+            'dit_sequence_padding': 'generic_sp_alignment_only',
+            'text_refiner_sp': 1 if isinstance(hardware, Ascend910B3) else sp,
+            'kernel_efficiency_calibrated': False,
+        }
+    metadata['attention_model'] = attention_model
+    metadata['_resolved_config']['attention_model'] = deepcopy(attention_model)
     if official:
         metadata.update(
             execution_profile=OFFICIAL_EXECUTION_PROFILE,
@@ -322,9 +355,10 @@ def create_workflow(hardware, config):
                 'prefetch_across_graph_invocations':False,
                 'first_layer_load_may_overlap_component_input_ops':True,
                 'shared_dma_compute_hbm_contention':False,
-                'capacity_keeps_non_layer_weights_resident':True},
+                'capacity_keeps_non_layer_weights_resident':True} if layerwise_enabled else None,
             qwen_text_layer_count=50,
-            memory_status='native_layerwise_weights_plus_persistent_plus_peak_operator_activation_proxy',
+            memory_status=('native_layerwise_weights_plus_persistent_plus_peak_operator_activation_proxy' if layerwise_enabled
+                           else 'native_resident_weights_plus_persistent_plus_peak_operator_activation_proxy'),
             stage_precision={
                 'qwen_vision_encode':'bf16', 'qwen_text_condition':'bf16',
                 'condition_vae_encode':'fp32', 'transformer_text_refiner':'bf16',

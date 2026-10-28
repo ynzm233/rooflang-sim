@@ -82,7 +82,8 @@ def apply_layerwise_offload(graph, placement, hardware, component, *,
     if layer_ids is None:
         layer_ids = {
             k.csv_metadata['layer_idx'] for k in ordered
-            if k.csv_metadata['operator'] == 'FlashAttentionOperator'
+            if k.csv_metadata['operator'] in (
+                'FlashAttentionOperator', 'NpuFusedInferAttentionScoreOperator')
         }
     layers = defaultdict(list)
     for kernel in ordered:
@@ -151,6 +152,6 @@ def graph_stats(result, hardware):
         'host_to_device_bytes': sum(entry.kernel.csv_metadata['host_to_device_bytes']
                                     for entry in copies),
         'copy_time_ms': sum(entry.end_us - entry.start_us for entry in copies) / 1000,
-        'exposed_transfer_time_ms': max(0.0, result.total_time_us - serial_compute_us) / 1000,
+        'exposed_transfer_time_ms': max(0.0, result.total_time_us - serial_compute_us) / 1000 if copies else 0.0,
         'offloaded_layer_count': len(copies),
     }

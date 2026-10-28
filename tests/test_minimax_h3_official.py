@@ -6,8 +6,12 @@ from types import SimpleNamespace
 import pytest
 
 from rooflang.language.kernels.kernel import Kernel
+from rooflang.programs.models.magi2_preview.operators import NpuFusedInferAttentionScoreOperator
 from rooflang.programs.models.minimax_h3 import workflow as workflow_module
+from rooflang.programs.models.minimax_h3.bridge import build_component
 from rooflang.programs.models.minimax_h3.hardware import A5PRServer
+from rooflang.programs.models.minimax_h3.offload import LayerRelease, WeightLoad
+from rooflang.programs.presets.ascend910b import Ascend910B3
 from rooflang.runtime.export_config import csv_fields, project_plan_metadata
 
 
@@ -158,6 +162,8 @@ def test_selected_stage_capacity_failure_preserves_transfer_metadata(modeled_gra
     {"execution_profile": "unknown"},
     {"compute_dtype": "fp16"},
     {"request_source": []},
+    {"layerwise_offload": True},
+    {"layerwise_offload": 0},
     {"layerwise_offload": {"prefetch_size": True, "resident_layers": 0}},
     {"layerwise_offload": {"prefetch_size": 2, "resident_layers": 0}},
     {"layerwise_offload": {"prefetch_size": 1, "resident_layers": 1}},
@@ -187,3 +193,64 @@ def test_official_defaults_count_updates_and_do_not_claim_stage_unload():
     assert resolved["assume_stage_unload"] is False
     workflow = workflow_module.create_workflow(profile_hardware(), config)
     assert workflow.metadata["stage_unload_applied"] is False
+
+
+@pytest.mark.parametrize("omitted", [False, True])
+def test_official_offload_none_or_omission_still_enables_default(omitted):
+    config = profile_config(layerwise_offload=None)
+    if omitted:
+        del config["layerwise_offload"]
+    original = deepcopy(config)
+    _, _, resolved = workflow_module.resolve_config(config)
+    assert config == original
+    assert resolved["layerwise_offload"] == {"prefetch_size": 1, "resident_layers": 0}
+
+
+def test_official_sp2_can_disable_offload_without_reverting_execution_profile():
+    config = profile_config(sp=2, layerwise_offload=False)
+    del config["num_inference_steps"]
+    original = deepcopy(config)
+    cfg, sp, resolved = workflow_module.resolve_config(config)
+    assert config == original
+    assert sp == 2
+    assert resolved["layerwise_offload"] is False
+    assert resolved["compute_dtype"] == "bf16"
+    assert cfg.num_inference_steps == 49
+    assert resolved["assume_stage_unload"] is False
+
+    hardware = Ascend910B3(2)
+    workflow = workflow_module.create_workflow(hardware, config)
+    architecture = workflow.metadata["_resolved_config"]["architecture"]
+    qwen = next(c for c in architecture["components"] if c["name"] == "qwen_text")
+    assert qwen["layer_blocks"][0]["repeat_times"] == 50
+    assert workflow.metadata["compute_dtype"] == "bf16"
+
+    # Build the real main graph without running the memory-heavy denoise stage.
+    mm = cfg.runtime_multimodal_config()
+    mm.update(execution_profile="sglang_v0_5_21", layerwise_offload=False)
+    graph, _ = build_component("transformer_ref", architecture, mm, mm["packed_rows"],
+                               hardware, sp=sp)
+    kernels = graph.topological_sort()
+    assert not any(isinstance(k, (WeightLoad, LayerRelease)) for k in kernels)
+    attention = [k for k in kernels
+                 if isinstance(getattr(k, "operator", None), NpuFusedInferAttentionScoreOperator)]
+    assert len(attention) == 50
+    assert all(k.operator.compute_dtype == "bf16" for k in attention)
+    assert all(k.csv_metadata["source_operator"] == "torch.ops.npu.npu_fused_infer_attention_score"
+               for k in attention)
+    assert any(k.weights for k in kernels)
+    assert not any(k.csv_metadata.get("weight_residency") == "layer_buffer_view" for k in kernels)
+
+    # The small real refiner run verifies the execution multiplier and DMA metrics.
+    results = workflow.run("transformer_text_refiner")
+    stage = results["transformer_text_refiner"]
+    assert stage.graphs[0].multiplier == 1
+    assert workflow.metadata["refiner_forward_count"] == 1
+    assert stage.metrics["host_to_device_bytes"] == 0
+    assert stage.metrics["offloaded_layer_count"] == 0
+    assert stage.metrics["copy_time_ms"] == 0
+    assert stage.metrics["streamed_weight_bytes"] == 0
+    assert stage.metrics["fixed_weight_bytes"] > 0
+    assert not any(isinstance(e.kernel, (WeightLoad, LayerRelease))
+                   for e in stage.graphs[0].result.trace)
+    assert config == original
