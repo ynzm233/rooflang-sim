@@ -23,7 +23,10 @@ class ToyLayer(Kernel):
 
     @property
     def flops_by_dtype(self):
-        return {'bf16:cube': self.compute_us * 294_912_000}
+        # Keep this scheduling fixture at its requested duration under the B3
+        # default 0.7 compute efficiency; peak/efficiency arithmetic is tested
+        # independently in test_ascend910b.py.
+        return {'bf16:cube': self.compute_us * 294_912_000 * 0.7}
 
 
 def toy(prefetch=1, *, weight_bytes=32_000, compute_us=2, split=False):

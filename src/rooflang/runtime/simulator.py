@@ -11,6 +11,7 @@ Stream semantics: kernels on the same (device, stream) execute serially.
 from __future__ import annotations
 
 import heapq
+import math
 from collections import defaultdict
 from dataclasses import dataclass, field
 from enum import Enum
@@ -663,6 +664,12 @@ class Simulator:
 
     def _base_times(self, kernel: Kernel, device: Compute,
                     participants: List[Compute]):
+        memory_efficiency = kernel.local_memory_efficiency
+        if (isinstance(memory_efficiency, bool)
+                or not isinstance(memory_efficiency, (int, float))
+                or not math.isfinite(memory_efficiency)
+                or not 0 < memory_efficiency <= 1):
+            raise ValueError("local_memory_efficiency must be finite and in (0, 1]")
         ct = self.compute_time_us(kernel, device)
 
         mt = 0.0
@@ -748,7 +755,9 @@ class Simulator:
                         for b, bw in link_data.values() if b > 0),
                        default=0.0)
 
-        return ct, mt, alpha, xfer, link_data
+        # Utilization reduces local bandwidth without inflating traffic/storage
+        # or changing DMA host links and inter-device communication.
+        return ct, mt / memory_efficiency, alpha, xfer, link_data
 
     @staticmethod
     def compute_time_us(kernel: Kernel, device: Compute) -> float:

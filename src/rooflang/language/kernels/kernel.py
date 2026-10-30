@@ -29,6 +29,9 @@ class Kernel:
     """
 
     _requires_placement = True
+    # Effective local-memory bandwidth / physical fabric bandwidth. This scales
+    # timing only: tensor storage, transferred bytes and remote links stay exact.
+    local_memory_efficiency = 1.0
 
     def __init__(
         self,
@@ -101,6 +104,8 @@ class Kernel:
         }
         if self.flops_by_dtype is not None:
             d["flops_by_dtype"] = self.flops_by_dtype
+        if self.local_memory_efficiency != 1.0:
+            d["local_memory_efficiency"] = self.local_memory_efficiency
         if self.input_tensor_bytes != self.input_bytes:
             d["input_tensor_bytes"] = self.input_tensor_bytes
         if self.weight_read_fraction != 1:

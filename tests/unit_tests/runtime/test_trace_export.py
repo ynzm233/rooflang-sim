@@ -55,6 +55,68 @@ def _hw():
 
 
 class TestExportTrace:
+    @pytest.mark.parametrize("efficiency", [0.6, 0.3])
+    def test_memory_efficiency_is_reflected_once_in_achieved_bandwidth(
+            self, tmp_path, efficiency):
+        hw, gpu, _ = _hw()
+        kernel = SyntheticKernel(
+            inputs={"x": Tensor("bf16", (500_000,))},
+            weights={"w": Tensor("bf16", (1_000_000,))},
+            outputs={"y": Tensor("bf16", (1_500_000,))},
+        )
+        kernel.local_memory_efficiency = efficiency
+        graph = ComputeGraph()
+        graph.add_kernel(kernel)
+        placement = Placement(hardware=hw)
+        placement.set_kernel_device(kernel, gpu)
+        result = Simulator(graph, placement, hw).run()
+        output = tmp_path / "memory-efficiency.json"
+        export_trace(result, str(output))
+        event = next(e for e in json.loads(output.read_text())["traceEvents"]
+                     if e["ph"] == "X")
+        args = event["args"]
+        assert event["dur"] == pytest.approx(6.0 / efficiency)
+        assert args["memory_time_us"] == pytest.approx(6.0 / efficiency)
+        assert args["local_memory_efficiency"] == efficiency
+        assert [args[f"{port}_bytes"] for port in ("input", "weight", "output")] == [
+            1_000_000, 2_000_000, 3_000_000,
+        ]
+        rates = [args[f"{port}_bandwidth_gbs"] for port in ("input", "weight", "output")]
+        assert rates == pytest.approx([1000 * efficiency / 6,
+                                       1000 * efficiency / 3,
+                                       1000 * efficiency / 2])
+        assert sum(rates) == pytest.approx(1000 * efficiency)
+
+    @pytest.mark.parametrize("direction", ["h2d", "d2h"])
+    def test_dma_trace_keeps_physical_local_bandwidth_and_host_transfer_rate(
+            self, tmp_path, direction):
+        from rooflang.programs.presets.ascend910b import Ascend910B3
+
+        hw = Ascend910B3()
+        host = Tensor("fp16", (160_000,))
+        local = Tensor("fp16", (160_000,))
+        kernel = SyntheticKernel(
+            inputs={"x": host if direction == "h2d" else local},
+            outputs={"y": local if direction == "h2d" else host},
+        )
+        graph = ComputeGraph()
+        graph.add_kernel(kernel)
+        placement = Placement(hardware=hw)
+        placement.set_kernel_device(kernel, hw.dma_devices[0])
+        placement.set_tensor_memory(host, hw.host_memory)
+        result = Simulator(graph, placement, hw).run()
+        output = tmp_path / "dma.json"
+        export_trace(result, str(output))
+        event = next(e for e in json.loads(output.read_text())["traceEvents"]
+                     if e["ph"] == "X")
+        args = event["args"]
+        assert event["dur"] == pytest.approx(10.0)
+        assert args["local_memory_efficiency"] == 1.0
+        assert args["memory_time_us"] == pytest.approx(0.2)
+        assert args["network_time_us"] == pytest.approx(10.0)
+        assert args["input_bandwidth_gbs"] == pytest.approx(32.0)
+        assert args["output_bandwidth_gbs"] == pytest.approx(32.0)
+
     def test_mixed_dtype_event_reports_effective_compute_peak(
             self, tmp_path):
         hw, gpu, hbm = _hw()

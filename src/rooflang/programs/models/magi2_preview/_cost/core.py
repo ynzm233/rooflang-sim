@@ -163,6 +163,13 @@ class ComputeComponent:
     vector_flops: float = 0.0
 
     dtype: str = "fp16"
+    # Mixed operators may use different arithmetic precision on each unit.
+    # dtype remains the fallback for existing single/shared-dtype recipes.
+    cube_dtype: str | None = None
+    vector_dtype: str | None = None
+
+    def get_unit_dtype(self, unit: str) -> str:
+        return (self.cube_dtype if unit == "cube" else self.vector_dtype) or self.dtype
 
     def total_flops(self) -> float:
         """Get total FLOPs."""

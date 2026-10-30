@@ -70,6 +70,9 @@ def export_trace(result: SimulationResult, path: str) -> None:
         top_tflops = max(entry.device.tflops.values()) if entry.device.tflops else 0.0
         top_flops = top_tflops * 1e12
         mfu_top = kernel.flops / (top_flops * dur_s) if top_flops > 0 and dur_s > 0 else 0.0
+        # Achieved per-port rates already include local-memory efficiency through
+        # the simulated duration. Multiplying again would double-count it; these
+        # rates are not the physical fabric's peak bandwidth.
         input_bw = kernel.input_bytes / (dur_s * 1e9) if dur_s > 0 else 0.0
         weight_bw = kernel.loaded_weight_bytes / (dur_s * 1e9) \
             if dur_s > 0 else 0.0
@@ -98,6 +101,7 @@ def export_trace(result: SimulationResult, path: str) -> None:
                 "input_bandwidth_gbs": input_bw,
                 "weight_bandwidth_gbs": weight_bw,
                 "output_bandwidth_gbs": output_bw,
+                "local_memory_efficiency": kernel.local_memory_efficiency,
                 "mfu": mfu,
                 f"mfu_{top_dtype}": mfu_top,
                 "bound": entry.bound.value,

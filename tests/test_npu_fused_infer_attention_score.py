@@ -35,13 +35,15 @@ def test_tnd_cumulative_boundaries_prevent_cross_document_attention():
     op = packed_attention()
     # The two documents have 3 and 2 tokens: 9 + 4 pairs, not 5 * 5.
     cube = 4 * 4 * 128 * 13
-    vector = 14 * 4 * 13
+    vector = 15 * 4 * 13  # scale(1) + softmax(14), all FP32
     assert op.get_flops() == cube + vector
     compute = op.get_compute_component()
     assert compute.unit_type == "mixed"
     assert compute.cube_flops == cube
     assert compute.vector_flops == vector
     assert compute.dtype == "bf16"
+    assert compute.get_unit_dtype("cube") == "bf16"
+    assert compute.get_unit_dtype("vector") == "fp32"
     assert isinstance(op.params, NpuFusedInferAttentionScoreParams)
     assert asdict(op.params)["actual_seq_lengths"] == [3, 5]
 
@@ -56,13 +58,13 @@ def test_bnsd_reads_active_rows_but_writes_stored_output_rows():
     assert details["kv_cache_read"] == details["kv_cache_saved"] == 0
     assert details["weight_read"] == details["weight_saved"] == 0
     assert op.get_memory_bytes() == expected
-    assert op.get_flops() == 4 * 25 * (4 * 128 + 14)
+    assert op.get_flops() == 4 * 25 * (4 * 128 + 15)
 
 
 def test_tnd_q_and_kv_documents_can_have_different_lengths():
     op = packed_attention(kv_len=6, actual_seq_lengths_kv=[2, 6])
     # Q documents [3, 2], KV documents [2, 4]: 3*2 + 2*4 = 14.
-    assert op.get_flops() == 4 * 14 * (4 * 128 + 14)
+    assert op.get_flops() == 4 * 14 * (4 * 128 + 15)
 
 
 def test_bnsd_causal_gqa_counts_triangle_and_mask_without_kv_cache():
@@ -72,7 +74,7 @@ def test_bnsd_causal_gqa_counts_triangle_and_mask_without_kv_cache():
         quant_config=QuantConfig(compute_dtype="bf16", kv_storage_dtype="fp32"),
     )
     # Each head has 1 + 2 + 3 + 4 valid pairs. The bool mask is shared.
-    assert op.get_flops() == 4 * 10 * (4 * 128 + 14)
+    assert op.get_flops() == 4 * 10 * (4 * 128 + 15)
     assert op.get_memory_bytes() == (2 * 4 * 4 * 128 + 2 * 4 * 2 * 128) * 2 + 16 + 4
     details = op.get_memory_details()
     assert details["activation"] == op.get_memory_bytes()
@@ -86,7 +88,7 @@ def test_bnsd_actual_lengths_are_per_batch_not_cumulative():
         actual_seq_lengths=[2, 3], actual_seq_lengths_kv=[4, 1],
     )
     # 2*4 + 3*1 = 11 pairs. Output retains 2*5 rows.
-    assert op.get_flops() == 2 * 11 * (4 * 128 + 14)
+    assert op.get_flops() == 2 * 11 * (4 * 128 + 15)
     assert op.get_memory_bytes() == (5 * 2 * 128 + 2 * 5 * 128 + 10 * 2 * 128) * 2 + 4
 
 
@@ -95,7 +97,7 @@ def test_zero_kv_heads_selects_mha_and_default_bnsd_lengths_cover_storage():
         batch_size=2, num_heads=4, q_len=3, kv_len=3,
         head_dim=128, input_layout="BNSD",
     )
-    assert op.get_flops() == 2 * 4 * 9 * (4 * 128 + 14)
+    assert op.get_flops() == 2 * 4 * 9 * (4 * 128 + 15)
     assert op.get_memory_bytes() == 4 * 2 * 3 * 4 * 128 * 2 + 4
 
 
@@ -185,6 +187,8 @@ def test_910b3_routes_every_h3_attention_component_and_preserves_dtype(component
     dtype = "fp16" if component == "video_vae_decoder" else "bf16"
     for kernel in attention:
         assert kernel.operator.compute_dtype == dtype
+        assert set(kernel.flops_by_dtype) == {dtype + ":cube", "fp32:vector"}
+        assert kernel.csv_metadata["vector_compute_dtype"] == "fp32"
         assert kernel.csv_metadata["operator"] == "NpuFusedInferAttentionScoreOperator"
         assert kernel.csv_metadata["shape"] == asdict(kernel.operator.params)
 
@@ -214,7 +218,7 @@ def test_910b3_dit_pads_to_64_and_attention_keeps_tail_separate(component, sp):
     assert op.params.q_len == op.params.kv_len == padded
     assert op.params.actual_seq_lengths == [seq_len, padded]
     assert op.params.actual_seq_lengths_kv == [seq_len, padded]
-    assert op.get_flops() == (4 // sp) * (seq_len**2 + 3**2) * (4 * 128 + 14)
+    assert op.get_flops() == (4 // sp) * (seq_len**2 + 3**2) * (4 * 128 + 15)
 
 
 def test_910b3_text_refiner_stays_unsharded_when_main_sp_is_two():
@@ -283,3 +287,54 @@ def test_generic_fa_workflow_records_selection_and_rejects_unknown_backend():
     assert metadata["_resolved_config"]["workload"]["attention_backend"] == "flash_attention"
     with pytest.raises(ValueError, match="attention_backend"):
         resolve_config({"attention_backend": "flash_atention"})
+
+
+@pytest.mark.parametrize("dtype", ["fp16", "bf16"])
+@pytest.mark.parametrize("length", [5, 4096])
+def test_fia_precision_and_memory_efficiencies_reach_native_simulator(dtype, length):
+    from rooflang.language.graph import ComputeGraph
+    from rooflang.language.placement import Placement
+    from rooflang.programs.models.magi2_preview.bridge import AnalyticalKernel
+    from rooflang.programs.models.minimax_h3.bridge import H3Kernel, _set_memory_efficiency
+    from rooflang.runtime.simulator import Simulator
+
+    op = packed_attention(q_len=length, kv_len=length,
+                          actual_seq_lengths=[length], actual_seq_lengths_kv=[length],
+                          quant_config=QuantConfig(compute_dtype=dtype))
+    hardware = Ascend910B3()
+    kernel = H3Kernel(op, {}, "test")
+    _set_memory_efficiency(kernel, hardware)
+    graph = ComputeGraph()
+    graph.add_kernel(kernel)
+    placement = Placement(hardware)
+    placement.set_kernel_device(kernel, hardware.devices[0])
+    result = Simulator(graph, placement, hardware).run()
+    # Q has 4 heads, K/V 2 each; O retains 4 heads and a 4-byte LSE placeholder.
+    qkv_bytes = length * (4 + 2 * 2) * 128 * 2
+    out_lse_bytes = length * 4 * 128 * 2 + 4
+    compute_us = ((4 * 4 * 128 * length**2) / (294.912e6 * 0.7)
+                  + (15 * 4 * length**2) / (9.216e6 * 0.7))
+    memory_us = qkv_bytes / (1600e3 * 0.6) + out_lse_bytes / (1600e3 * 0.3)
+    assert result.trace[0].compute_time_us == pytest.approx(compute_us)
+    assert result.trace[0].memory_time_us == pytest.approx(memory_us)
+    assert result.total_time_us == pytest.approx(max(compute_us, memory_us))
+    assert kernel.transferred_bytes == qkv_bytes + out_lse_bytes
+    assert op.get_memory_bytes_by_unit() == {"cube": qkv_bytes, "vector": out_lse_bytes}
+    # The generic bridge also preserves mixed precision without unit suffixes.
+    assert AnalyticalKernel(op, {}, "generic").flops_by_dtype == {
+        dtype: 4 * 4 * 128 * length**2, "fp32": 15 * 4 * length**2,
+    }
+
+
+def test_b3_pure_units_receive_distinct_memory_efficiencies():
+    graph, _ = build_component("transformer", attention_architecture("transformer"),
+                               {"execution_profile": "sglang_v0_5_21"}, 8, Ascend910B3())
+    seen = set()
+    for kernel in graph.topological_sort():
+        c = kernel.operator.get_compute_component()
+        if c and c.unit_type in ("cube", "vector"):
+            expected = 0.6 if c.unit_type == "cube" else 0.3
+            assert kernel.local_memory_efficiency == pytest.approx(expected)
+            assert kernel.transferred_bytes == kernel.operator.get_memory_bytes()
+            seen.add(c.unit_type)
+    assert seen == {"cube", "vector"}

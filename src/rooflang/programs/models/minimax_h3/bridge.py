@@ -21,8 +21,35 @@ class H3Kernel(AnalyticalKernel):
         c = self.operator.get_compute_component()
         if c is None: return {'fp16': 0.0}
         if c.unit_type == 'mixed':
-            return {c.dtype + ':cube': c.cube_flops, c.dtype + ':vector': c.vector_flops}
+            return {c.get_unit_dtype('cube') + ':cube': c.cube_flops,
+                    c.get_unit_dtype('vector') + ':vector': c.vector_flops}
         return {c.dtype + ':' + c.unit_type: c.flops}
+
+
+def _set_memory_efficiency(kernel, hardware):
+    """Apply B3 unit efficiencies to time, preserving physical traffic bytes."""
+    if not isinstance(hardware, Ascend910B3):
+        return
+    op = kernel.operator
+    component = op.get_compute_component()
+    if isinstance(op, NpuFusedInferAttentionScoreOperator):
+        by_unit = op.get_memory_bytes_by_unit()
+        basis = 'single_pass_qkv_cube_output_mask_lse_vector'
+    else:
+        # Generic mixed recipes expose no per-unit traffic. Keep their fused
+        # boundary on cube; never infer a byte split from the FLOP ratio.
+        unit = 'vector' if component is None or component.unit_type in ('vector', 'storage') else 'cube'
+        by_unit = {unit: op.get_memory_bytes()}
+        basis = 'operator_unit_or_cube_for_generic_mixed_boundary'
+    assumptions = hardware.metadata['simulation_assumptions']
+    efficiencies = {unit: assumptions[f'{unit}_memory_efficiency'] for unit in by_unit}
+    total = sum(by_unit.values())
+    weighted = sum(size / efficiencies[unit] for unit, size in by_unit.items())
+    kernel.local_memory_efficiency = total / weighted if weighted else 1.0
+    kernel.csv_metadata.update(memory_bytes_by_unit=by_unit,
+                               memory_efficiency_by_unit=efficiencies,
+                               local_memory_efficiency=kernel.local_memory_efficiency,
+                               memory_efficiency_basis=basis)
 
 class H3Collective(CommKernel):
     """Source all-to-all bytes, timed on the hardware's aggregate fabric."""
@@ -111,6 +138,9 @@ def build_component(component, architecture, mm, seq_len, hardware, sp=1):
               'activation_peak_bytes_proxy':details.get('activation',0)}
         if isinstance(op, NpuFusedInferAttentionScoreOperator):
             meta.update(source_operator='torch.ops.npu.npu_fused_infer_attention_score',
+                        source_documentation=op.source_url,
+                        cube_compute_dtype=op.compute_dtype,
+                        vector_compute_dtype=op.vector_compute_dtype,
                         atten_mask_shape=op.atten_mask_shape, assumption=op.assumption,
                         attention_pairs=op.valid_pairs,
                         attention_alignment=('pinned_sglang_dit' if packed
@@ -125,6 +155,7 @@ def build_component(component, architecture, mm, seq_len, hardware, sp=1):
                     placement.set_tensor_memory(tensor,mem)
         else:
             kernel=H3Kernel(op,meta,f'{component}:{index}')
+            _set_memory_efficiency(kernel, hardware)
             # Reference memory peak excludes kv_cache, reported separately.
             kernel.csv_metadata['activation_peak_bytes_proxy']=details.get('activation',0)
             if previous_compute is not None:

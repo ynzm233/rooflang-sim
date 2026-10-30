@@ -330,6 +330,11 @@ def create_workflow(hardware, config):
             'text_refiner_sp': 1,
             'other_attention_layout': 'BNSD',
             'non_dit_scope': 'analytical_substitution_not_runtime_verified',
+            'source_documentation': 'https://gitee.com/ascend/cann-ops-adv/blob/master/docs/FusedInferAttentionScore.md',
+            'cube_compute_dtype': 'input_fp16_or_bf16',
+            'vector_compute_dtype': 'fp32',
+            'vector_flops_per_pair': 15,
+            'memory_unit_attribution': 'Q/K/V=cube; O/mask/LSE=vector; workspace/L2 traffic unmodeled',
             'kernel_efficiency_calibrated': False,
         }
     else:

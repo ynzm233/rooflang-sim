@@ -86,6 +86,14 @@ class AnalyticalKernel(Kernel):
         component = operator.get_compute_component()
         self._compute_flops = (component.total_flops() if component is not None else 0)
         self._compute_dtype = component.dtype if component is not None else operator.compute_dtype
+        self._compute_flops_by_dtype = {}
+        if component is not None and component.unit_type == "mixed":
+            for unit in ("cube", "vector"):
+                dtype = component.get_unit_dtype(unit)
+                self._compute_flops_by_dtype[dtype] = (
+                    self._compute_flops_by_dtype.get(dtype, 0) + component.get_unit_flops(unit))
+        else:
+            self._compute_flops_by_dtype[self._compute_dtype] = self._compute_flops
         # The reference formula specifies aggregate activation traffic. A native
         # traffic buffer charges that byte volume exactly on symmetric HBM links.
         # The descriptor has zero physical storage: aggregate traffic is not a
@@ -106,7 +114,7 @@ class AnalyticalKernel(Kernel):
 
     @property
     def flops_by_dtype(self):
-        return {self._compute_dtype: self._compute_flops}
+        return self._compute_flops_by_dtype
 
     @property
     def input_bytes(self):

@@ -1,6 +1,6 @@
 """Analytical Ascend FIA subset, not an executable NPU kernel.
 
-Softmax14 and single-pass boundary traffic are uncalibrated assumptions.
+Scale1 + softmax14 and single-pass boundary traffic are analytical assumptions.
 Wrapper copies, tiling, workspace and hardware overlap are not inferred.
 """
 from dataclasses import dataclass
@@ -59,9 +59,13 @@ class NpuFusedInferAttentionScoreParams(OperatorParams):
 class NpuFusedInferAttentionScoreOperator(Operator):
     PARAM_CLASS = NpuFusedInferAttentionScoreParams
     COMPUTE_UNIT = 'mixed'
-    assumption = ('Ascend FIA API cost model; softmax14; single-pass QKVO/mask/LSE '
-                  'traffic; shared cube/vector compute dtype; wrapper copies, '
-                  'workspace, tile rereads and kernel efficiency uncalibrated')
+    source_url = 'https://gitee.com/ascend/cann-ops-adv/blob/master/docs/FusedInferAttentionScore.md'
+    vector_compute_dtype = 'fp32'
+    assumption = ('Ascend unquantized high-precision FIA; scale1 + softmax14; '
+                  'cube uses input fp16/bf16, vector uses fp32; single-pass HBM '
+                  'Q/K/V assigned to cube, O/mask/LSE to vector; serial cube+vector '
+                  'compute roofline; score/probability workspace traffic, L2 effects, '
+                  'wrapper copies, tile rereads and kernel overlap uncalibrated')
 
     def parse_args(self, **kwargs):
         p = self.params
@@ -105,21 +109,36 @@ class NpuFusedInferAttentionScoreOperator(Operator):
         return 4 * self.params.num_heads * self.params.head_dim * self.valid_pairs
 
     def get_vector_flops(self):
-        return 14 * self.params.num_heads * self.valid_pairs
+        # Official formula: Softmax(scale * QK^T) * V. Count scale even when
+        # scale == 1; this model does not assume constant-folding by the kernel.
+        # Softmax: max/sum reductions(2), subtract(1), exp(10), divide(1).
+        return 15 * self.params.num_heads * self.valid_pairs
 
     def get_flops(self):
         return self.get_cube_flops() + self.get_vector_flops()
 
     def get_compute_component(self):
         return ComputeComponent(unit_type='mixed', cube_flops=self.get_cube_flops(),
-                                vector_flops=self.get_vector_flops(), dtype=self.compute_dtype)
+                                vector_flops=self.get_vector_flops(), dtype=self.compute_dtype,
+                                cube_dtype=self.compute_dtype,
+                                vector_dtype=self.vector_compute_dtype)
 
-    def get_memory_details(self):
+    def get_memory_bytes_by_unit(self):
+        """Boundary HBM traffic by consuming/producing unit, without tile rereads.
+
+        FP32 vector arithmetic does not change Q/K/V/O storage. Score/probability
+        workspace transfers and their L2 hit rate are outside this boundary model.
+        Unit attribution is a roofline assumption, not a measured CANN trace.
+        """
         p = self.params
+        size = self.quant_config.get_compute_size()
         output_rows = p.batch_size * p.q_len
-        elements = ((sum(self.q_lengths) + output_rows) * p.num_heads
-                    + 2 * sum(self.kv_lengths) * self.kv_heads) * p.head_dim
+        qkv_bytes = (sum(self.q_lengths) * p.num_heads
+                     + 2 * sum(self.kv_lengths) * self.kv_heads) * p.head_dim * size
+        output_bytes = output_rows * p.num_heads * p.head_dim * size
         mask_bytes = math.prod(self.atten_mask_shape) if p.causal else 0
         lse_bytes = output_rows * p.num_heads * 4 if p.softmax_lse_flag else 4
-        return self.memory_details(activation=(elements * self.quant_config.get_compute_size()
-                                               + mask_bytes + lse_bytes))
+        return {'cube': qkv_bytes, 'vector': output_bytes + mask_bytes + lse_bytes}
+
+    def get_memory_details(self):
+        return self.memory_details(activation=sum(self.get_memory_bytes_by_unit().values()))

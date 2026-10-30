@@ -46,7 +46,7 @@ def run_single(hardware, kernel):
 ])
 def test_cube_and_vector_peaks_drive_separate_costs(segments, expected_us):
     result = run_single(Ascend910B(), ComputeSegments(segments))
-    assert result.total_time_us == pytest.approx(expected_us)
+    assert result.total_time_us == pytest.approx(expected_us / 0.7)
     with pytest.raises(ValueError, match="no compute for dtype 'fp8:cube'"):
         run_single(Ascend910B(), ComputeSegments({"fp8:cube": 1_000_000}))
 
@@ -66,6 +66,36 @@ def test_hbm_bandwidth_and_physical_capacity_units():
         run_single(hardware, too_large)
     assert error.value.capacity_bytes == capacity
     assert error.value.used_bytes == capacity + 2
+
+
+@pytest.mark.parametrize(("unit", "efficiency", "expected_us"), [
+    ("cube", 0.6, 5.0), ("vector", 0.3, 10.0),
+])
+def test_unit_memory_efficiency_changes_time_without_inflating_bytes(
+    unit, efficiency, expected_us,
+):
+    hardware = Ascend910B3()
+    assert hardware.metadata["simulation_assumptions"][f"{unit}_memory_efficiency"] == efficiency
+    kernel = ComputeSegments(inputs={"x": Tensor("fp16", (800_000,))},
+                             outputs={"y": Tensor("fp16", (1_600_000,))})
+    physical_result = run_single(hardware, kernel)
+    kernel.local_memory_efficiency = efficiency
+    result = run_single(hardware, kernel)
+    assert result.total_time_us == pytest.approx(expected_us)
+    assert result.trace[0].memory_time_us == pytest.approx(expected_us)
+    assert kernel.transferred_bytes == 4_800_000
+    assert result.peak_memory == physical_result.peak_memory
+    assert kernel.to_dict()["local_memory_efficiency"] == efficiency
+    fabric = hardware.find_fabric(hardware.devices[0], hardware.find_local_memory(hardware.devices[0]))
+    assert fabric.src_to_dst_bandwidth_gbs == fabric.dst_to_src_bandwidth_gbs == 1600
+
+
+@pytest.mark.parametrize("efficiency", [0, -0.1, 1.1, float("nan"), float("inf"), True, None])
+def test_invalid_local_memory_efficiency_is_rejected(efficiency):
+    kernel = ComputeSegments()
+    kernel.local_memory_efficiency = efficiency
+    with pytest.raises(ValueError, match="local_memory_efficiency"):
+        run_single(Ascend910B3(), kernel)
 
 
 def test_two_card_collective_uses_direct_per_direction_bandwidth():
@@ -91,7 +121,8 @@ def test_two_card_collective_uses_direct_per_direction_bandwidth():
 
 
 @pytest.mark.parametrize("direction", ["h2d", "d2h"])
-def test_host_transfer_uses_host_link_and_keeps_hbm_local(direction):
+@pytest.mark.parametrize("memory_efficiency", [1.0, 0.3])
+def test_host_transfer_uses_host_link_and_keeps_hbm_local(direction, memory_efficiency):
     hardware = Ascend910B3(2)
     device = hardware.dma_devices[0]
     host_tensor = Tensor("fp16", (160_000,))
@@ -101,6 +132,8 @@ def test_host_transfer_uses_host_link_and_keeps_hbm_local(direction):
         "outputs": {"destination": hbm_tensor if direction == "h2d" else host_tensor},
     }
     kernel = ComputeSegments(**ports)
+    assert kernel.local_memory_efficiency == 1.0
+    kernel.local_memory_efficiency = memory_efficiency
     graph = ComputeGraph()
     graph.add_kernel(kernel)
     placement = Placement(hardware)
@@ -115,6 +148,9 @@ def test_host_transfer_uses_host_link_and_keeps_hbm_local(direction):
     # 320 kB in either direction / 32 GB/s = 10 us.
     result = Simulator(graph, placement, hardware).run()
     assert result.total_time_us == pytest.approx(10.0)
+    assert result.trace[0].memory_time_us == pytest.approx(0.2 / memory_efficiency)
+    assert result.trace[0].network_time_us == pytest.approx(10.0)
+    assert kernel.transferred_bytes == 640_000
 
 
 def test_dma_prefetch_overlaps_independent_npu_compute():
@@ -122,7 +158,7 @@ def test_dma_prefetch_overlaps_independent_npu_compute():
     host_tensor = Tensor("fp16", (160_000,))
     copy = ComputeSegments(inputs={"source": host_tensor},
                            outputs={"destination": Tensor("fp16", (160_000,))})
-    compute = ComputeSegments({"fp16:cube": 2_949_120_000})
+    compute = ComputeSegments({"fp16:cube": 2_064_384_000})
     graph = ComputeGraph()
     graph.add_kernel(copy)
     graph.add_kernel(compute)
@@ -178,6 +214,10 @@ def test_snapshot_preserves_sources_and_uncalibrated_capacity_assumptions():
     assert saved["derived_specification"]["vector_tflops"]["fp16"] == 18.432
     assert Ascend910B is Ascend910B3
     assumptions = saved["simulation_assumptions"]
+    assert assumptions["cube_efficiency"] == assumptions["vector_efficiency"] == 0.7
+    assert assumptions["cube_memory_efficiency"] == 0.6
+    assert assumptions["vector_memory_efficiency"] == 0.3
+    assert assumptions["memory_efficiency"] == 1.0
     assert assumptions["memory_capacity_gb"] == 68.719476736
     assert assumptions["driver_runtime_reserved_bytes"] == 0
     assert assumptions["intra_node_bandwidth_gbs"] == 28.0
