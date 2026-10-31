@@ -1,5 +1,7 @@
 # MiniMax-H3：FL2VA / Ref2VA 性能仿真
 
+命令使用 Windows PowerShell；请先按 [README](../README.md#1-安装并运行) 创建虚拟环境并安装依赖，再在项目根目录执行。多行命令末尾的反引号（`` ` ``）后不能有空格。
+
 ## 910B3 通用 FA 重跑（2026-10-28）
 
 配置显式设置 `"attention_backend": "flash_attention"`，所有 attention 使用仓库原有
@@ -11,12 +13,12 @@
 输出宽 1344、高 768、124 帧、24 fps。使用 `sglang_v0_5_21`、BF16、49 次去噪，
 逐层卸载 `prefetch_size=1, resident_layers=0`。
 
-```bash
-.venv/bin/python -m rooflang --model minimax_h3 --hardware Ascend910B3_1Card \
-  --config examples/minimax_h3_ref2va_910b_sp1_fa.json \
+```powershell
+.\.venv\Scripts\python.exe -m rooflang --model minimax_h3 --hardware Ascend910B3_1Card `
+  --config examples/minimax_h3_ref2va_910b_sp1_fa.json `
   --output-dir outputs/minimax_h3_ref2va_910b3_sp1_fa
-.venv/bin/python -m rooflang --model minimax_h3 --hardware Ascend910B3_2Cards \
-  --config examples/minimax_h3_ref2va_910b_sp2_fa.json \
+.\.venv\Scripts\python.exe -m rooflang --model minimax_h3 --hardware Ascend910B3_2Cards `
+  --config examples/minimax_h3_ref2va_910b_sp2_fa.json `
   --output-dir outputs/minimax_h3_ref2va_910b3_sp2_fa
 ```
 
@@ -35,13 +37,13 @@
 
 在仓库根目录安装 `pip install -e '.[test]'` 后：
 
-```bash
-rooflang-sim --model minimax_h3 --hardware A5_pr_server \
+```powershell
+.\.venv\Scripts\python.exe -m rooflang --model minimax_h3 --hardware A5_pr_server `
   --config examples/minimax_h3_fl2va.json --output-dir outputs/h3-fl2va
-rooflang-sim --model minimax_h3 --hardware A5_pr_server \
+.\.venv\Scripts\python.exe -m rooflang --model minimax_h3 --hardware A5_pr_server `
   --config examples/minimax_h3_ref2va.json --output-dir outputs/h3-ref2va
-python scripts/minimax_h3_baseline.py
-python -m pytest -q tests/test_minimax_h3.py tests/test_a5_950pr.py
+.\.venv\Scripts\python.exe scripts/minimax_h3_baseline.py
+.\.venv\Scripts\python.exe -m pytest -q tests/test_minimax_h3.py tests/test_a5_950pr.py
 ```
 
 `--config` 是扁平模型参数 JSON；模型名、硬件名和输出目录通过 CLI 传入。省略 H3 硬件参数时默认 `A5_pr_server`。该模型输出性能和容量估算，不生成图片、视频、音频或模型权重。
@@ -71,12 +73,12 @@ python -m pytest -q tests/test_minimax_h3.py tests/test_a5_950pr.py
 
 ## 910B3：官方 Ref2VA 单卡与双卡
 
-```bash
-rooflang-sim --model minimax_h3 --hardware Ascend910B3_1Card \
-  --config examples/minimax_h3_ref2va_910b_sp1.json \
+```powershell
+.\.venv\Scripts\python.exe -m rooflang --model minimax_h3 --hardware Ascend910B3_1Card `
+  --config examples/minimax_h3_ref2va_910b_sp1.json `
   --output-dir outputs/minimax_h3_ref2va_910b3_sp1_fia
-rooflang-sim --model minimax_h3 --hardware Ascend910B3_2Cards \
-  --config examples/minimax_h3_ref2va_910b_sp2.json \
+.\.venv\Scripts\python.exe -m rooflang --model minimax_h3 --hardware Ascend910B3_2Cards `
+  --config examples/minimax_h3_ref2va_910b_sp2.json `
   --output-dir outputs/minimax_h3_ref2va_910b3_sp2_fia
 ```
 
@@ -136,17 +138,17 @@ rooflang-sim --model minimax_h3 --hardware Ascend910B3_2Cards \
 
 计算按 `4×H×D×有效对数` Cube FLOPs 和 `15×H×有效对数` FP32 Vector FLOPs 估算。15 包含 scale 乘法 1 和既有 Softmax 14（exp=10、sub/div 各 1、max/sum reduction 各 1）；官方 [x910 内核](https://gitee.com/ascend/cann-ops-adv/blob/master/src/transformer/prompt_flash_attention/prompt_flash_attention_s1s2_bns1_x910.h)在 Softmax 前显式执行 `Muls(scaleValue)`。这些 FLOPs 是解析成本约定，不是 CANN 指令数或实测周期。Cube/Vector 计算时间仍串行相加后与访存时间取 max，未模拟真实流水重叠、在线 Softmax 更新和转换开销。
 
-访存保留原输入 dtype：单次 Q/K/V 读取归 Cube，完整 O、布尔 mask、FP32 LSE 写出/读取归 Vector；LSE 关闭时仍计 4-byte 占位输出。以此明确的边界流量假设计算 `Tmem=bytes_cube/(1600GB/s×0.6)+bytes_vector/(1600GB/s×0.3)`，不放大真实字节数，也不把全部中间矩阵直接算作 HBM。官方部分 x910 模板会通过 GM workspace 交换分块 score/probability，其实际 HBM 流量还依赖 L2；本模型未覆盖这部分、tile 重读、布局转换和掩码构造，因此不能把边界流量理解为完整实测 HBM 流量。
+访存保留原输入 dtype：单次 Q/K/V 读取归 Cube，完整 O、布尔 mask、FP32 LSE 写出/读取归 Vector；LSE 关闭时仍计 4-byte 占位输出。以此明确的边界流量假设计算 `Tmem=bytes_cube/(1600GB/s×eff_cube)+bytes_vector/(1600GB/s×eff_vector)`，当前两项效率均为 0.6。不放大真实字节数，也不把全部中间矩阵直接算作 HBM。官方部分 x910 模板会通过 GM workspace 交换分块 score/probability，其实际 HBM 流量还依赖 L2；本模型未覆盖这部分、tile 重读、布局转换和掩码构造，因此不能把边界流量理解为完整实测 HBM 流量。
 
-CSV 额外导出 `cube_compute_dtype/vector_compute_dtype`、`flops_by_dtype`、`memory_bytes_by_unit`、`memory_efficiency_by_unit` 和 `local_memory_efficiency`。后者为按字节加权的有效效率，只用于计时，流量与容量代理不随效率变化。B3 的其它纯 Cube/Vector 算子分别应用 0.6/0.3；显式选择通用 FA 等未提供访存分项的 mixed 算子，融合边界按 Cube 归属并写入 `memory_efficiency_basis`。
+CSV 额外导出 `cube_compute_dtype/vector_compute_dtype`、`flops_by_dtype`、`memory_bytes_by_unit`、`memory_efficiency_by_unit` 和 `local_memory_efficiency`。后者为按字节加权的有效效率，只用于计时，流量与容量代理不随效率变化。B3 的其它纯 Cube/Vector 算子也应用各自效率，当前均为 0.6；显式选择通用 FA 等未提供访存分项的 mixed 算子，融合边界按 Cube 归属并写入 `memory_efficiency_basis`。
 
 ### 关闭逐层卸载的 SP2 场景
 
 如需关闭逐层卸载，官方 profile 支持显式 `"layerwise_offload": false`；省略或 `null` 仍使用默认逐层预取。可复现的 SP2 配置为 `examples/minimax_h3_ref2va_910b_sp2_no_offload.json`，只改变卸载选项，保留 BF16、49 步及 FIA：
 
-```bash
-rooflang-sim --model minimax_h3 --hardware Ascend910B3_2Cards \
-  --config examples/minimax_h3_ref2va_910b_sp2_no_offload.json \
+```powershell
+.\.venv\Scripts\python.exe -m rooflang --model minimax_h3 --hardware Ascend910B3_2Cards `
+  --config examples/minimax_h3_ref2va_910b_sp2_no_offload.json `
   --output-dir outputs/minimax_h3_ref2va_910b3_sp2_fia_no_offload
 ```
 
@@ -164,17 +166,43 @@ rooflang-sim --model minimax_h3 --hardware Ascend910B3_2Cards \
 | Host→NPU DMA | 每卡每方向 32 GB/s | 理想链路假设，未实测且未核验 PCIe 配置；每卡独立 DMA，无 host root-complex 共享争用 |
 | 双卡 HCCS | 每方向 28 GB/s | 将[论文中的 B4 单链路 56 GB/s](https://arxiv.org/html/2605.22428v1#S6.SS1)假设为双向合计后用于 B3，型号迁移和方向均未校准 |
 
-2026-10-30 起 B3 默认 Cube/Vector 计算效率均为 **0.7**，MiniMax-H3 的 Cube/Vector 访存效率分别为 **0.6/0.3**。对应 FP16/BF16 Cube 有效算力 206.4384 TFLOPS、FP32 Vector 6.4512 TFLOPS，有效访存带宽分别为 960/480 GB/s。这些是本次指定的假设，不是官方性能保证或实测校准。HBM Fabric 保留物理 1600 GB/s（全局 `memory_efficiency=1`），每个计算节点单独折减本地访存时间；DMA 和 Host 链路不套用 Cube/Vector 效率。
+2026-10-31 起 B3 默认 Cube/Vector 计算效率均为 **0.7**，MiniMax-H3 的 Cube/Vector 访存效率均为 **0.6**（Vector 从 0.3 调整为 0.6）。对应 FP16/BF16 Cube 有效算力 206.4384 TFLOPS、FP32 Vector 6.4512 TFLOPS，两类算子的有效访存带宽均为 960 GB/s。这些是用户指定的假设，不是官方性能保证或实测校准。HBM Fabric 保留物理 1600 GB/s（全局 `memory_efficiency=1`），每个计算节点单独折减本地访存时间；DMA 和 Host 链路不套用 Cube/Vector 效率。
 
 固定链路延迟为 0；Host RAM 按部署工具包记录的 1.5 TiB，未扣系统保留。DMA 的 HBM 边与计算访存边独立，暂不模拟二者的共享 HBM 带宽争用。规格、推导、效率、假设和来源均写入 `config.snapshot.json` 的 `hardware.metadata`。
 
-### FP32 Vector 与指定效率的单卡 Ref2VA 结果（2026-10-30）
+### Vector 访存效率 0.6 的单卡 Ref2VA 结果（2026-10-31）
 
-沿用官方请求 SP1、BF16 输入、124 帧 1344×768、49 次去噪及逐层卸载 `prefetch_size=1/resident_layers=0`。以下命令可复现本次结果：
+相对下方 2026-10-30 结果，仅将 Vector 访存效率从 0.3 提高至 0.6。沿用单卡 SP1、FIA FP32 Vector、49 次去噪、逐层卸载 `prefetch_size=1/resident_layers=0`，输入配置和其它硬件参数均保持一致。
 
-```bash
-.venv/bin/python -m rooflang --model minimax_h3 --hardware Ascend910B3_1Card \
-  --config examples/minimax_h3_ref2va_910b_sp1.json \
+```powershell
+.\.venv\Scripts\python.exe -m rooflang --model minimax_h3 --hardware Ascend910B3_1Card `
+  --config examples/minimax_h3_ref2va_910b_sp1.json `
+  --output-dir outputs/minimax_h3_ref2va_910b3_sp1_fia_fp32_vector_mem06_20261031
+```
+
+| 阶段／指标 | Vector 访存效率 0.3，秒 | Vector 访存效率 0.6，秒 |
+|---|---:|---:|
+| Qwen vision | 0.334 | 0.299 |
+| Qwen text | 2.344 | 2.188 |
+| Condition VAE encode | 40.512 | 39.731 |
+| Text refiner | 0.111 | 0.106 |
+| Denoise，49 次 | 5528.940 | **5401.780** |
+| Video-VAE decode | 30.012 | 29.955 |
+| Audio-VAE decode | 0.011 | 0.011 |
+| 已建模阶段总时间 | 5602.264 | **5474.070** |
+| Denoise 平均每步 | 112.836 | **110.240** |
+
+总时间减少 **128.193 秒（2.288%）**。FLOPs、物理访存字节数和容量代理均未变化；峰值仍为 **12.270 GiB**，64 GiB 容量代理检查通过。去噪计算工作量时间仍为 5276.501 秒，访存工作量时间从 315.148 秒下降至 184.506 秒；算子按 roofline 取计算与访存的瓶颈，因此不能把访存工作量的减少直接视为同等阶段加速。上述工作量与阶段时延不可重复相加。
+
+输出目录保留 `comparison.json`、完整阶段/算子 CSV、`config.snapshot.json`、运行日志和本次源码差异。比较文件核验输入配置、注意力模型、其它硬件参数、FLOPs、流量及容量代理均保持一致。时延仍为解析估算，未完整覆盖内部 workspace/L2 与服务开销。
+
+### 历史：FP32 Vector 与指定效率的单卡 Ref2VA 结果（2026-10-30）
+
+沿用官方请求 SP1、BF16 输入、124 帧 1344×768、49 次去噪及逐层卸载 `prefetch_size=1/resident_layers=0`。此历史结果采用 Vector 访存效率 0.3；以下命令应在提交 `637d200` 上执行，当前默认效率已更新为 0.6：
+
+```powershell
+.\.venv\Scripts\python.exe -m rooflang --model minimax_h3 --hardware Ascend910B3_1Card `
+  --config examples/minimax_h3_ref2va_910b_sp1.json `
   --output-dir outputs/minimax_h3_ref2va_910b3_sp1_fia_fp32_20261030
 ```
 
@@ -198,11 +226,11 @@ rooflang-sim --model minimax_h3 --hardware Ascend910B3_2Cards \
 
 ### 相同条件下关闭逐层卸载（单卡）
 
-`examples/minimax_h3_ref2va_910b_sp1_no_offload.json` 从上述运行的输入快照复制，仅将 `layerwise_offload` 改为 `false`。FIA FP32 Vector、计算效率 0.7、Cube/Vector 访存效率 0.6/0.3、49 步及其它请求条件保持一致，也未启用阶段卸载。
+`examples/minimax_h3_ref2va_910b_sp1_no_offload.json` 从单卡逐层卸载运行的输入快照复制，仅将 `layerwise_offload` 改为 `false`。FIA FP32 Vector、49 步及其它请求条件保持一致，也未启用阶段卸载；效率采用当前 B3 预设（计算 0.7、Cube/Vector 访存均为 0.6）。
 
-```bash
-.venv/bin/python -m rooflang --model minimax_h3 --hardware Ascend910B3_1Card \
-  --config examples/minimax_h3_ref2va_910b_sp1_no_offload.json \
+```powershell
+.\.venv\Scripts\python.exe -m rooflang --model minimax_h3 --hardware Ascend910B3_1Card `
+  --config examples/minimax_h3_ref2va_910b_sp1_no_offload.json `
   --output-dir outputs/minimax_h3_ref2va_910b3_sp1_fia_fp32_no_offload
 ```
 

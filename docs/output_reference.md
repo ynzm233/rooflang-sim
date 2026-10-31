@@ -79,7 +79,7 @@ MAGI 的 `request_per_second` 表示已建模加速器工作范围内的 clips/s
 
 只有图内完全串行时，阶段时间才等于各算子耗时乘次数的总和。并行/重叠/资源竞争应使用仿真器返回的经过时间。未计时行不参与时间求和；CPU 未计时算量按独立 CPU 字段解释。驻留权重和内存峰值不乘调用次数。
 
-以 `python examples/toy_model.py --tokens 2 --hidden 4 --steps 3` 为例，`transform.csv` 只有一条核记录，`graph_multiplier=3`；阶段得到 48 FLOPs、144 字节访存，驻留权重仍为 16 字节。示例的 `--check` 会验证这一关系。
+以 `.\.venv\Scripts\python.exe examples/toy_model.py --tokens 2 --hidden 4 --steps 3` 为例，`transform.csv` 只有一条核记录，`graph_multiplier=3`；阶段得到 48 FLOPs、144 字节访存，驻留权重仍为 16 字节。示例的 `--check` 会验证这一关系。
 
 ## 3. 三个 JSON 的结构
 

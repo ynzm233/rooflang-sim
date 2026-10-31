@@ -1,14 +1,16 @@
 # 交付验收（2026-10-15）
 
+下表命令已换为 Windows PowerShell 等价写法；测试结果和耗时保留原验收记录，不代表已在 Windows 重新测试。
+
 本记录对应当前 `rooflang-sim`：`A5_pr_server` 已采用官方 Ascend 950PR 规格，并明确保留必要的效率与通信仿真假设。运行环境为仓库 `.venv`，Python 3.14.2、NetworkX 3.7。
 
 ## 已执行的检查
 
 | 检查 | 结果 |
 | --- | --- |
-| `.venv/bin/python -m pytest -q` | 652 项通过，1 个可选绘图模块跳过，9.47 秒；覆盖核心、算子、通信、容量、阶段、导出和模型回归 |
+| `.\.venv\Scripts\python.exe -m pytest -q` | 652 项通过，1 个可选绘图模块跳过，9.47 秒；覆盖核心、算子、通信、容量、阶段、导出和模型回归 |
 | `tests/test_a5_950pr.py` | 7 项通过：Cube/Vector 手算成本、FP8 不支持路径、十进制带宽、128 GB 容量边界、通信假设与快照 |
-| `.venv/bin/python scripts/minimax_h3_baseline.py` | 历史硬件源复现通过：FL2VA 4288 行、Ref2VA 4282 行；6 份源配置 SHA-256 校验通过 |
+| `.\.venv\Scripts\python.exe scripts/minimax_h3_baseline.py` | 历史硬件源复现通过：FL2VA 4288 行、Ref2VA 4282 行；6 份源配置 SHA-256 校验通过 |
 | 当前默认 CLI 两条 H3 完整工作流 | FL2VA、Ref2VA 均完成；默认阶段卸载下两者 `is_valid=true` |
 | 当前 CLI 导出 | `config.snapshot.json` 包含官方规格、来源、核查日期与仿真假设；容量和带宽采用十进制 |
 

@@ -291,7 +291,10 @@ def test_generic_fa_workflow_records_selection_and_rejects_unknown_backend():
 
 @pytest.mark.parametrize("dtype", ["fp16", "bf16"])
 @pytest.mark.parametrize("length", [5, 4096])
-def test_fia_precision_and_memory_efficiencies_reach_native_simulator(dtype, length):
+@pytest.mark.parametrize("vector_memory_efficiency", [0.6, 0.3])
+def test_fia_precision_and_memory_efficiencies_reach_native_simulator(
+    dtype, length, vector_memory_efficiency,
+):
     from rooflang.language.graph import ComputeGraph
     from rooflang.language.placement import Placement
     from rooflang.programs.models.magi2_preview.bridge import AnalyticalKernel
@@ -302,6 +305,10 @@ def test_fia_precision_and_memory_efficiencies_reach_native_simulator(dtype, len
                           actual_seq_lengths=[length], actual_seq_lengths_kv=[length],
                           quant_config=QuantConfig(compute_dtype=dtype))
     hardware = Ascend910B3()
+    # Also exercise unequal unit efficiencies so Cube/Vector routing stays covered.
+    assumptions = hardware.metadata["simulation_assumptions"]
+    assert assumptions["vector_memory_efficiency"] == 0.6
+    assumptions["vector_memory_efficiency"] = vector_memory_efficiency
     kernel = H3Kernel(op, {}, "test")
     _set_memory_efficiency(kernel, hardware)
     graph = ComputeGraph()
@@ -314,7 +321,8 @@ def test_fia_precision_and_memory_efficiencies_reach_native_simulator(dtype, len
     out_lse_bytes = length * 4 * 128 * 2 + 4
     compute_us = ((4 * 4 * 128 * length**2) / (294.912e6 * 0.7)
                   + (15 * 4 * length**2) / (9.216e6 * 0.7))
-    memory_us = qkv_bytes / (1600e3 * 0.6) + out_lse_bytes / (1600e3 * 0.3)
+    memory_us = (qkv_bytes / (1600e3 * 0.6)
+                 + out_lse_bytes / (1600e3 * vector_memory_efficiency))
     assert result.trace[0].compute_time_us == pytest.approx(compute_us)
     assert result.trace[0].memory_time_us == pytest.approx(memory_us)
     assert result.total_time_us == pytest.approx(max(compute_us, memory_us))
@@ -326,14 +334,17 @@ def test_fia_precision_and_memory_efficiencies_reach_native_simulator(dtype, len
     }
 
 
-def test_b3_pure_units_receive_distinct_memory_efficiencies():
+@pytest.mark.parametrize("vector_memory_efficiency", [0.6, 0.3])
+def test_b3_pure_units_receive_configured_memory_efficiencies(vector_memory_efficiency):
+    hardware = Ascend910B3()
+    hardware.metadata["simulation_assumptions"]["vector_memory_efficiency"] = vector_memory_efficiency
     graph, _ = build_component("transformer", attention_architecture("transformer"),
-                               {"execution_profile": "sglang_v0_5_21"}, 8, Ascend910B3())
+                               {"execution_profile": "sglang_v0_5_21"}, 8, hardware)
     seen = set()
     for kernel in graph.topological_sort():
         c = kernel.operator.get_compute_component()
         if c and c.unit_type in ("cube", "vector"):
-            expected = 0.6 if c.unit_type == "cube" else 0.3
+            expected = 0.6 if c.unit_type == "cube" else vector_memory_efficiency
             assert kernel.local_memory_efficiency == pytest.approx(expected)
             assert kernel.transferred_bytes == kernel.operator.get_memory_bytes()
             seen.add(c.unit_type)

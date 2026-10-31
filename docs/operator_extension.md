@@ -1,9 +1,11 @@
 # 缺少算子时如何添加
 
+命令使用 Windows PowerShell；请先按 [README](../README.md#1-安装并运行) 创建虚拟环境并安装依赖，再在项目根目录执行。多行命令末尾的反引号（`` ` ``）后不能有空格。
+
 先确定算子的输入/输出形状、计算精度、FLOPs、读写流量和驻留存储，再实现 `Kernel`。可直接运行的完整示例是 [`examples/toy_model.py`](../examples/toy_model.py) 中的 `Affine`。
 
-```bash
-python examples/toy_model.py --check
+```powershell
+.\.venv\Scripts\python.exe examples/toy_model.py --check
 ```
 
 ## 1. 选择扩展位置
@@ -118,9 +120,9 @@ result = simulate(graph, placement, hardware)
 
 示例内的 `ExampleChecks` 包含这条流程的最小可运行版本；正式公共算子测试放在 `tests/unit_tests/language/`，模型专属测试放在 `tests/unit_tests/programs/`。不要把某次仿真的耗时常量硬编码成算子公式，也不要从参考输出读取数值来代替运算。
 
-```bash
-python examples/toy_model.py --check
-python -m pytest -q tests/unit_tests/language tests/unit_tests/runtime
+```powershell
+.\.venv\Scripts\python.exe examples/toy_model.py --check
+.\.venv\Scripts\python.exe -m pytest -q tests/unit_tests/language tests/unit_tests/runtime
 ```
 
 pytest 需要按 README 安装开发依赖。模型专属算子还应运行相应模型测试以及一组完整工作流输出检查。

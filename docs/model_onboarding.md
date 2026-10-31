@@ -1,11 +1,13 @@
 # 接入新模型：数据准备与可运行示例
 
+命令使用 Windows PowerShell；请先按 [README](../README.md#1-安装并运行) 创建虚拟环境并安装依赖，再在项目根目录执行。多行命令末尾的反引号（`` ` ``）后不能有空格。
+
 先运行仓库自带的接入示例，再替换其形状、算子和阶段。此仓库模拟计算、访存、通信和内存占用；输入是模型描述与数值工作负载，不需要执行模型前向或加载权重。
 
-```bash
-python -m pip install -e .
-python examples/toy_model.py --check
-python examples/toy_model.py --tokens 32 --hidden 16 --steps 3 --output-dir outputs/toy
+```powershell
+.\.venv\Scripts\python.exe -m pip install -e .
+.\.venv\Scripts\python.exe examples/toy_model.py --check
+.\.venv\Scripts\python.exe examples/toy_model.py --tokens 32 --hidden 16 --steps 3 --output-dir outputs/toy
 ```
 
 `--check` 使用 Python 标准库运行三个检查，无需另装 pytest。正常运行生成 `transform.csv`、`stage_metrics.csv`、`toy_affine_plan_metrics.csv` 和三个运行记录 JSON。示例设备为自行声明的 1 BF16 TFLOP/s、100 GB/s、1 GB 内存设备，不代表真实产品。
@@ -59,8 +61,8 @@ FLOPs       = 2 × N                         # 每元素一次乘、一次加
 {"batch_size": 1, "tokens": 2, "hidden": 4, "steps": 3}
 ```
 
-```bash
-python examples/toy_model.py --config toy_workload.json --output-dir outputs/toy_small
+```powershell
+.\.venv\Scripts\python.exe examples/toy_model.py --config toy_workload.json --output-dir outputs/toy_small
 ```
 
 执行链为 `create_workflow(hardware, config)` → 构造 `Kernel`/`Tensor` → 加入 `ComputeGraph` → `Placement` 指定设备和内存 → 校验 → `simulate()` → `StageResult` → `run_and_export()`。示例通过 Python 接口运行，不占用正式模型注册表中的名字。
@@ -75,8 +77,8 @@ python examples/toy_model.py --config toy_workload.json --output-dir outputs/toy
 
 注册后的命令形式为：
 
-```bash
-rooflang-sim --model new_model --hardware B300Cluster1Node \
+```powershell
+.\.venv\Scripts\python.exe -m rooflang --model new_model --hardware B300Cluster1Node `
   --config examples/new_model.json --output-dir outputs/new_model
 ```
 

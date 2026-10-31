@@ -68,14 +68,15 @@ def test_hbm_bandwidth_and_physical_capacity_units():
     assert error.value.used_bytes == capacity + 2
 
 
-@pytest.mark.parametrize(("unit", "efficiency", "expected_us"), [
-    ("cube", 0.6, 5.0), ("vector", 0.3, 10.0),
+@pytest.mark.parametrize(("efficiency", "expected_us"), [
+    (0.6, 5.0), (0.3, 10.0),
 ])
-def test_unit_memory_efficiency_changes_time_without_inflating_bytes(
-    unit, efficiency, expected_us,
+def test_local_memory_efficiency_changes_time_without_inflating_bytes(
+    efficiency, expected_us,
 ):
     hardware = Ascend910B3()
-    assert hardware.metadata["simulation_assumptions"][f"{unit}_memory_efficiency"] == efficiency
+    assumptions = hardware.metadata["simulation_assumptions"]
+    assert assumptions["cube_memory_efficiency"] == assumptions["vector_memory_efficiency"] == 0.6
     kernel = ComputeSegments(inputs={"x": Tensor("fp16", (800_000,))},
                              outputs={"y": Tensor("fp16", (1_600_000,))})
     physical_result = run_single(hardware, kernel)
@@ -216,7 +217,7 @@ def test_snapshot_preserves_sources_and_uncalibrated_capacity_assumptions():
     assumptions = saved["simulation_assumptions"]
     assert assumptions["cube_efficiency"] == assumptions["vector_efficiency"] == 0.7
     assert assumptions["cube_memory_efficiency"] == 0.6
-    assert assumptions["vector_memory_efficiency"] == 0.3
+    assert assumptions["vector_memory_efficiency"] == 0.6
     assert assumptions["memory_efficiency"] == 1.0
     assert assumptions["memory_capacity_gb"] == 68.719476736
     assert assumptions["driver_runtime_reserved_bytes"] == 0

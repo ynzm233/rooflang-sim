@@ -48,7 +48,7 @@ SIMULATION_ASSUMPTIONS = {
     "cube_efficiency": 0.7,
     "vector_efficiency": 0.7,
     "cube_memory_efficiency": 0.6,
-    "vector_memory_efficiency": 0.3,
+    "vector_memory_efficiency": 0.6,
     # Keep physical HBM and DMA bandwidth separate from operator utilization.
     # Model bridges apply the unit-specific values to each kernel's local time.
     "memory_efficiency": 1.0,
@@ -88,7 +88,7 @@ SIMULATION_ASSUMPTIONS = {
     "dma_basis": "one independent transfer engine per NPU for copy/compute overlap",
     "dma_hbm_bandwidth_basis": "independent 1600 GB/s HBM write/read edge; no shared HBM contention",
     "dma_transfer_scope": "critical-rank transfers; host root-complex contention not modeled",
-    "calibration": "uncalibrated user-specified efficiencies: compute 0.7, Cube HBM 0.6, Vector HBM 0.3; no measured latency calibration",
+    "calibration": "uncalibrated user-specified efficiencies: compute 0.7, Cube HBM 0.6, Vector HBM 0.6; no measured latency calibration",
 }
 
 

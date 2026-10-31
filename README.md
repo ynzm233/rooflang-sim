@@ -8,23 +8,24 @@
 
 要求 Python 3.11+，推荐使用验证环境对应的 Python 3.12。采用标准 Python 包布局，仓库目录名称不影响安装和导入。
 
-```bash
-cd ~/Desktop/rooflang-sim
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install -e '.[test]'
-rooflang-sim --model magi2_preview --config examples/magi2_quick.json --output-dir outputs/quick
+以下命令使用 **Windows PowerShell**，请在项目根目录执行；安装示例中的桌面路径请按实际位置调整。直接调用虚拟环境的 Python，无需激活。多行命令使用反引号（`` ` ``）续行，反引号后不能有空格；不要使用 Bash 的反斜杠 `\` 续行。
+
+```powershell
+Set-Location "$HOME\Desktop\rooflang-sim"
+py -3 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -e '.[test]'
+.\.venv\Scripts\python.exe -m rooflang --model magi2_preview --config examples/magi2_quick.json --output-dir outputs/quick
 ```
 
-基础运行仅依赖 `networkx`；测试增加 `pytest`。需要复现已验证的依赖环境时，先执行 `python -m pip install -r requirements.lock.txt`，再安装本包；锁文件包含可选绘图与测试依赖。绘制计算图时再安装 `python -m pip install -e '.[plot]'`。`python -m rooflang` 与 `rooflang-sim` 等价。
+基础运行仅依赖 `networkx`；测试增加 `pytest`。需要复现已验证的依赖环境时，先执行 `.\.venv\Scripts\python.exe -m pip install -r requirements.lock.txt`，再安装本包；锁文件包含可选绘图与测试依赖。绘制计算图时再安装 `.\.venv\Scripts\python.exe -m pip install -e '.[plot]'`。`.\.venv\Scripts\python.exe -m rooflang` 与 `rooflang-sim` 等价。
 
 完整工作流：
 
-```bash
-rooflang-sim --model magi2_preview --hardware B300Cluster1Node --config examples/magi2_i2v.json --output-dir outputs/magi2_i2v
-rooflang-sim --model magi2_preview --hardware B300Cluster1Node --config examples/magi2_t2v.json --output-dir outputs/magi2_t2v
-rooflang-sim --model minimax_h3 --hardware A5_pr_server --config examples/minimax_h3_fl2va.json --output-dir outputs/h3_fl2va
-rooflang-sim --model minimax_h3 --hardware A5_pr_server --config examples/minimax_h3_ref2va.json --output-dir outputs/h3_ref2va
+```powershell
+.\.venv\Scripts\python.exe -m rooflang --model magi2_preview --hardware B300Cluster1Node --config examples/magi2_i2v.json --output-dir outputs/magi2_i2v
+.\.venv\Scripts\python.exe -m rooflang --model magi2_preview --hardware B300Cluster1Node --config examples/magi2_t2v.json --output-dir outputs/magi2_t2v
+.\.venv\Scripts\python.exe -m rooflang --model minimax_h3 --hardware A5_pr_server --config examples/minimax_h3_fl2va.json --output-dir outputs/h3_fl2va
+.\.venv\Scripts\python.exe -m rooflang --model minimax_h3 --hardware A5_pr_server --config examples/minimax_h3_ref2va.json --output-dir outputs/h3_ref2va
 ```
 
 命令行参数覆盖 JSON 中同名参数；其余使用模型随包提供的默认配置。`--stage <阶段名>` 只运行一个阶段，默认 `all`。`--help` 列出可用参数；完整模型参数通过 JSON 设置。
@@ -38,9 +39,9 @@ MiniMax-H3 的 `fl2va` 包含首帧／尾帧／首尾两帧条件；`ref2va` 支
 
 910B3 单卡／双卡场景使用官方 Ref2VA 完整 prompt、参考视频原音轨与独立语音，处理后输入／输出均为 1344×768、124 帧、24 fps。两组采用 SP=1／2、49 次去噪、组件混合精度及逐层权重卸载（当前层＋预取 1 层，额外常驻层为 0）：
 
-```bash
-rooflang-sim --model minimax_h3 --hardware Ascend910B3_1Card --config examples/minimax_h3_ref2va_910b_sp1.json --output-dir outputs/minimax_h3_ref2va_910b3_sp1
-rooflang-sim --model minimax_h3 --hardware Ascend910B3_2Cards --config examples/minimax_h3_ref2va_910b_sp2.json --output-dir outputs/minimax_h3_ref2va_910b3_sp2
+```powershell
+.\.venv\Scripts\python.exe -m rooflang --model minimax_h3 --hardware Ascend910B3_1Card --config examples/minimax_h3_ref2va_910b_sp1.json --output-dir outputs/minimax_h3_ref2va_910b3_sp1
+.\.venv\Scripts\python.exe -m rooflang --model minimax_h3 --hardware Ascend910B3_2Cards --config examples/minimax_h3_ref2va_910b_sp2.json --output-dir outputs/minimax_h3_ref2va_910b3_sp2
 ```
 
 完整条件长度为 6915 rows，packed rows 为 82749。Host DMA 32 GB/s、HCCS 每方向 28 GB/s 等参数尚未实测校准，容量 proxy 不含 workspace；旧 910B 短 prompt／整阶段驻留结果不适用。来源、推导和限制见 [910B3 官方 Ref2VA 场景](docs/minimax_h3.md#910b3官方-ref2va-单卡与双卡)。
@@ -65,8 +66,8 @@ rooflang-sim --model minimax_h3 --hardware Ascend910B3_2Cards --config examples/
 4. 在 `programs/models/__init__.py` 的 `MODEL_NAMES` 中注册模型，通过统一入口导出，并增加 shape、公式、加权汇总和容量回归测试。
 5. 记录建模依据、输入、运行环境、输出和局限；按照 [完整接入指南](docs/model_onboarding.md) 核对数据，参考 [可运行最小模型](examples/toy_model.py)。
 
-```bash
-python examples/toy_model.py --check --output-dir outputs/toy
+```powershell
+.\.venv\Scripts\python.exe examples/toy_model.py --check --output-dir outputs/toy
 ```
 
 ## 3. 缺失算子如何添加
@@ -102,13 +103,13 @@ python examples/toy_model.py --check --output-dir outputs/toy
 
 `baselines/` 保存各工作流的固定参考结果、配置、精度与比较方法。校验脚本运行当前模型，逐项比较 shape、图执行次数、算子成本、阶段时延和显存统计。H3 脚本使用隔离的历史硬件重放原工程基线，日常 CLI 使用修正后的官方 950PR 规格；旧基线的二进制内存口径只用于历史复现。运行与基线校验只需本仓库及已安装的 Python 依赖。完整验收记录见 [validation.md](docs/validation.md)。
 
-```bash
-python -m pytest -q
-python scripts/magi2_baseline.py
-python scripts/minimax_h3_baseline.py
+```powershell
+.\.venv\Scripts\python.exe -m pytest -q
+.\.venv\Scripts\python.exe scripts/magi2_baseline.py
+.\.venv\Scripts\python.exe scripts/minimax_h3_baseline.py
 ```
 
-未安装 `.[plot]` 时跳过可选绘图测试；执行全部测试请先安装 `python -m pip install -e '.[test,plot]'`。各次测试结果见验收记录。
+未安装 `.[plot]` 时跳过可选绘图测试；执行全部测试请先安装 `.\.venv\Scripts\python.exe -m pip install -e '.[test,plot]'`。各次测试结果见验收记录。
 
 | 模型／工作流 | 当前默认仿真时延（ms） | 口径 |
 | --- | ---: | --- |
@@ -137,6 +138,6 @@ docs/                        接入、算子、输出与建模边界
 
 仓库聚焦多模态生成的性能仿真，由通用前向算子、通信算子、图与硬件描述、离散事件运行时和模型工作流组成。通用前向核与通信优化可用于接入更多模型，计算图绘制为可选功能。
 
-命令行入口为 `rooflang-sim`，也可使用 `python -m rooflang` 或 `python -m rooflang.programs.experiments.main`。Python API 位于 `rooflang` 命名空间，模型通过 `create_workflow(hardware, config)` 创建工作流，通过 `run_and_export()` 运行并导出结果。
+命令行入口为 `rooflang-sim`，也可使用 `.\.venv\Scripts\python.exe -m rooflang` 或 `.\.venv\Scripts\python.exe -m rooflang.programs.experiments.main`。Python API 位于 `rooflang` 命名空间，模型通过 `create_workflow(hardware, config)` 创建工作流，通过 `run_and_export()` 运行并导出结果。
 
 模型架构与默认工作负载以 JSON 随包提供，`examples/` 中的 JSON 用于配置具体运行场景。许可证见 [LICENSE.txt](LICENSE.txt)。

@@ -1,10 +1,12 @@
 # MAGI-2 Preview workflow
 
+命令使用 Windows PowerShell；请先按 [README](../README.md#1-安装并运行) 创建虚拟环境并安装依赖，再在项目根目录执行。多行命令末尾的反引号（`` ` ``）后不能有空格。
+
 Run the complete configured workflow from the repository root:
 
-```bash
-rooflang-sim \
-  --model magi2_preview --hardware B300Cluster1Node \
+```powershell
+.\.venv\Scripts\python.exe -m rooflang `
+  --model magi2_preview --hardware B300Cluster1Node `
   --workflow i2v --output-dir outputs/magi2_preview/i2v
 ```
 
