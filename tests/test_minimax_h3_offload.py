@@ -93,7 +93,8 @@ def test_early_use_weights_live_until_end_of_layer():
 @pytest.mark.parametrize('sp', [1, 2])
 def test_official_components_have_native_precision_and_streaming(sp):
     root = Path(__file__).resolve().parents[1]
-    config = json.loads((root / f'examples/minimax_h3_ref2va_910b_sp{sp}.json').read_text())
+    config = json.loads((root / 'examples/minimax_h3_ref2va_910b_sp1.json').read_text())
+    config['sp'] = sp
     hardware = Ascend910B3(sp)
     workflow = create_workflow(hardware, config)
     results = workflow.run()
@@ -114,7 +115,16 @@ def test_official_components_have_native_precision_and_streaming(sp):
             component = next(iter(kernels)).csv_metadata['component']
             dtype, layer_count = expected[component]
             seen.add(component)
-            assert {k.operator.compute_dtype for k in kernels if hasattr(k, 'operator')} == {dtype}
+            dtypes = {k.operator.compute_dtype for k in kernels if hasattr(k, 'operator')}
+            if graph.label == 'video_vae_decode_stitch':
+                assert dtypes == {'fp32'}
+                layer_count = 0
+            elif component == 'video_vae_decoder':
+                assert dtypes == {'fp16', 'fp32'}
+                assert all(k.operator.vector_compute_dtype == 'fp32'
+                           for k in kernels if hasattr(k, 'operator'))
+            else:
+                assert dtypes == {dtype}
             stats = graph_stats(graph.result, hardware)
             assert stats['offloaded_layer_count'] == layer_count, component
             assert (stats['host_to_device_bytes'] > 0) == (layer_count > 0), component

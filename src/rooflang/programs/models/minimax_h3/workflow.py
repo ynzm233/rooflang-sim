@@ -158,10 +158,17 @@ def create_workflow(hardware, config):
     jobs['transformer_denoise']=[(transformer,'transformer_denoise',mm['packed_rows'],{},cfg.num_inference_steps,True)]
     h,w,tiles=video_vae_tiles(mm['target_height'],mm['target_width'])
     calls=(math.ceil((mm['target_latent_frames']+3)/5)-1)*tiles
-    jobs['video_vae_decode']=[('video_vae_decoder','video_vae_decode',7*(h//16)*(w//16)+5,{},calls,False)]
+    jobs['video_vae_decode']=[
+        ('video_vae_decoder','video_vae_decode',7*(h//16)*(w//16)+5,{},calls,False),
+        ('video_vae_decoder','video_vae_decode_stitch',1,{'decode_stitch':True},1,False)]
     jobs['audio_vae_decode']=[('audio_vae_decoder','audio_vae_decode',1,{},1,False)]
 
     def run_stage(name):
+        if name in ('video_vae_decode', 'audio_vae_decode'):
+            for key in ('fp32:cube', 'fp32:vector'):
+                value = devices[0].tflops.get(key, 0)
+                if not math.isfinite(value) or value <= 0:
+                    raise ValueError(f'MiniMax-H3 decode requires explicit positive throughput for {key}')
         result=StageResult(); weights={}; peak=0
         fixed_weights={}; streamed_weights={}; layer_counts={}
         transient_peak=0; weight_peak=0; h2d_bytes=0; copy_ms=0; exposed_ms=0
@@ -319,6 +326,8 @@ def create_workflow(hardware, config):
         'source_commit':_load('SOURCES.json')['source_commit'],
         'latency_scope':latency_scope,'compute_scope':'critical_rank_per_stage_not_global_device_sum',
         'timing_backend':'rooflang_discrete_event_simulator','end_to_end_timing_complete':False,
+        'decode_model':'trace_aligned',
+        'decode_model_scope':'measured_kernel_topology_analytical_costs_uncalibrated',
         'memory_status':'indexed_weights_plus_persistent_plus_peak_operator_activation_proxy',
         'capacity_verdict_is_provisional':True}
     if isinstance(hardware, Ascend910B3) and mm['attention_backend'] == 'auto':
@@ -346,7 +355,23 @@ def create_workflow(hardware, config):
             'kernel_efficiency_calibrated': False,
         }
     metadata['attention_model'] = attention_model
+    attention_model['video_decode_operator'] = 'FlashAttentionScore'
     metadata['_resolved_config']['attention_model'] = deepcopy(attention_model)
+    metadata['decode_recipes'] = {
+            'video_vae_decoder': {
+                'implementation': 'minimax_h3.video_decode.video_decode_nodes',
+                'attention': 'FlashAttentionScore', 'layers': 36,
+                'storage_precision': 'fp16_projections_fp32_norm_and_residual',
+                'vector_compute_dtype': 'fp32'},
+            'audio_vae_decoder': {
+                'implementation': 'minimax_h3.audio_decode.audio_decode_nodes',
+                'storage_precision': 'fp32', 'alias_free_snake_count': 127,
+                'vector_compute_dtype': 'fp32'},
+            'source_files': ['measured/video_vae_decode.csv', 'measured/audio_vae_decode.csv'],
+            'timing': 'analytical_hardware_costs_no_measured_duration_lookup',
+            'architecture_scope': 'explicit_device_kernel_recipes',
+        }
+    metadata['_resolved_config']['decode_recipes'] = deepcopy(metadata['decode_recipes'])
     if official:
         metadata.update(
             execution_profile=OFFICIAL_EXECUTION_PROFILE,
@@ -367,6 +392,6 @@ def create_workflow(hardware, config):
             stage_precision={
                 'qwen_vision_encode':'bf16', 'qwen_text_condition':'bf16',
                 'condition_vae_encode':'fp32', 'transformer_text_refiner':'bf16',
-                'transformer_denoise':'bf16', 'video_vae_decode':'fp16',
+                'transformer_denoise':'bf16', 'video_vae_decode':'mixed_fp16_fp32',
                 'audio_vae_decode':'fp32'})
     return Workflow({name:partial(run_stage,name) for name in jobs}, metadata, summarize)

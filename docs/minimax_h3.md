@@ -2,9 +2,11 @@
 
 命令使用 Windows PowerShell；请先按 [README](../README.md#1-安装并运行) 创建虚拟环境并安装依赖，再在项目根目录执行。多行命令末尾的反引号（`` ` ``）后不能有空格。
 
+**2026-11-02 decode 更新：** Video/Audio 已按 `measured/` 的设备算子明细重构，旧 decode 实现已删除。当前配方、实测比对和限制见 [decode 建模说明](minimax_h3_decode.md)。本页带日期的旧时延表为历史结果，包含旧 decode 的全流程总量不代表当前模型。Video decode 固定采用实测 FlashAttentionScore，FP16/FP32 张量分别建模；Audio decode 使用 FP32。当前 A5 预设缺少 FP32 吞吐，新 decode 请使用具备明确 FP32 吞吐的预设，例如 Ascend910B3。
+
 ## 910B3 通用 FA 重跑（2026-10-28）
 
-配置显式设置 `"attention_backend": "flash_attention"`，所有 attention 使用仓库原有
+历史运行配置显式设置 `"attention_backend": "flash_attention"`，当时所有 attention 使用仓库原有
 `FlashAttentionOperator` 成本模型。省略该字段或设为 `"auto"` 保留原有硬件选择行为
 （910B3 使用 FIA）。通用 FA 沿用原有 SP 长度对齐，不应用 FIA 分支的 64 行 padding；
 910B3 的 text refiner 仍在每卡处理完整提示词、SP=1。
@@ -13,14 +15,7 @@
 输出宽 1344、高 768、124 帧、24 fps。使用 `sglang_v0_5_21`、BF16、49 次去噪，
 逐层卸载 `prefetch_size=1, resident_layers=0`。
 
-```powershell
-.\.venv\Scripts\python.exe -m rooflang --model minimax_h3 --hardware Ascend910B3_1Card `
-  --config examples/minimax_h3_ref2va_910b_sp1_fa.json `
-  --output-dir outputs/minimax_h3_ref2va_910b3_sp1_fa
-.\.venv\Scripts\python.exe -m rooflang --model minimax_h3 --hardware Ascend910B3_2Cards `
-  --config examples/minimax_h3_ref2va_910b_sp2_fa.json `
-  --output-dir outputs/minimax_h3_ref2va_910b3_sp2_fa
-```
+旧 FA 示例配置已清理。进行同类实验时，复制当前 `examples/minimax_h3_ref2va_910b_sp1.json`，设置 `attention_backend="flash_attention"`；双卡再设置 `sp=2` 并选择 `Ascend910B3_2Cards`。以下表格保留历史结果，当前代码重跑不等于复现当时版本。
 
 | 配置 | 建模总耗时 | 去噪耗时 | 每卡峰值显存代理 | 容量判定 |
 |---|---:|---:|---:|---|
@@ -38,28 +33,28 @@
 在仓库根目录安装 `pip install -e '.[test]'` 后：
 
 ```powershell
-.\.venv\Scripts\python.exe -m rooflang --model minimax_h3 --hardware A5_pr_server `
-  --config examples/minimax_h3_fl2va.json --output-dir outputs/h3-fl2va
-.\.venv\Scripts\python.exe -m rooflang --model minimax_h3 --hardware A5_pr_server `
-  --config examples/minimax_h3_ref2va.json --output-dir outputs/h3-ref2va
+.\.venv\Scripts\python.exe -m rooflang --model minimax_h3 --hardware Ascend910B3_1Card `
+  --config examples/minimax_h3_ref2va_910b_sp1.json --output-dir outputs/h3-ref2va
+.\.venv\Scripts\python.exe scripts/minimax_h3_decode_validation.py `
+  --output-dir outputs/minimax_h3_decode_validation
 .\.venv\Scripts\python.exe scripts/minimax_h3_baseline.py
 .\.venv\Scripts\python.exe -m pytest -q tests/test_minimax_h3.py tests/test_a5_950pr.py
 ```
 
 `--config` 是扁平模型参数 JSON；模型名、硬件名和输出目录通过 CLI 传入。省略 H3 硬件参数时默认 `A5_pr_server`。该模型输出性能和容量估算，不生成图片、视频、音频或模型权重。
 
-两条默认流程均为 batch=1、SP=4、TP/CP/DP/PP=1、FP16、124 帧、768×1344、50 次去噪。采用官方 950PR 规格及下文列明的仿真假设，当前完整运行结果如下：
+以下是 decode 重构前的历史 A5 流程：batch=1、SP=4、TP/CP/DP/PP=1、FP16、124 帧、768×1344、50 次去噪。其完整运行结果不再用于验证新 decode：
 
-| 流程 | 含义 | packed rows | 当前主算子时延 ms |
+| 流程 | 含义 | packed rows | 历史主算子时延 ms |
 |---|---|---:|---:|
 | FL2VA | 首帧、尾帧或首尾两帧约束生成带音轨视频；默认首尾两帧 | 41763 | 228193.52842317586 |
 | Ref2VA | 参考图像/视频和可选参考音频约束生成带音轨视频；默认参考视频带音轨 | 81532 | 685813.7461188152 |
 
-`baselines/minimax_h3/` 保存原工程冻结的 summary、阶段 CSV、逐图算子 CSV、配置和校验信息，供历史源复现。其 `source/configs/chips/A5_pr_server.yaml` 不参与当前仿真。校验脚本通过仅用于验证的 `source_hardware()` 重放该目录，逐行比对算子身份、层号、FLOPs、访存、权重和时间分项，并核对阶段次数、总量、shape、驻留容量。当前 950PR 参数由 `tests/test_a5_950pr.py` 的手算和容量边界测试验证，默认流程结果以本页上表为准。浮点容差为相对 `1e-10`、绝对 `1e-8`；不要求不同 Python 版本产生逐字节相同的浮点字符串。
+`baselines/minimax_h3/` 保存原工程冻结的历史数据，其 `source/configs/chips/A5_pr_server.yaml` 不参与当前仿真。校验脚本通过仅用于验证的 `source_hardware()` 核对五个未改动阶段的算子身份、层号、FLOPs、访存、权重、时间分项与重复次数。旧 decode 和旧全流程总量不再作为正确性标准。浮点容差为相对 `1e-10`、绝对 `1e-8`。
 
 ## 接入数据如何准备
 
-输入是结构和形状数据，仿真不加载媒体或权重。`src/rooflang/programs/models/minimax_h3/architecture.json` 定义组件、层数、通道、head、FFN、patch 和权重字节数；同目录的 `workload.json` 给出完整默认请求，两份 examples 是可直接编辑的最小运行配置。
+输入是结构和形状数据，仿真不加载媒体或权重。`src/rooflang/programs/models/minimax_h3/architecture.json` 定义组件、层数、通道、head、FFN、patch 和权重字节数；同目录的 `workload.json` 给出完整默认请求。`examples/` 仅保留 `minimax_h3_ref2va_910b_sp1.json` 作为当前 MiniMax-H3 运行配置。
 
 1. 准备目标 `target.frames/height/width`。宽高为 32 的正整数倍；目标帧数满足 `17*n+5`，并处于 24fps 下 5–15 秒范围。不要将 latent 尺寸写进这些像素/帧字段。
 2. 准备条件。FL2VA 用 `keyframes: ["first"]`、`["last"]` 或两者；Ref2VA 用 `references`，每条含 `kind`（image/video/audio）、视觉尺寸和帧数、音频秒数。参考数量、帧数和持续时间由配置类校验；修改条件时同步下一项。
@@ -77,10 +72,9 @@
 .\.venv\Scripts\python.exe -m rooflang --model minimax_h3 --hardware Ascend910B3_1Card `
   --config examples/minimax_h3_ref2va_910b_sp1.json `
   --output-dir outputs/minimax_h3_ref2va_910b3_sp1_fia
-.\.venv\Scripts\python.exe -m rooflang --model minimax_h3 --hardware Ascend910B3_2Cards `
-  --config examples/minimax_h3_ref2va_910b_sp2.json `
-  --output-dir outputs/minimax_h3_ref2va_910b3_sp2_fia
 ```
+
+双卡实验需复制上述 SP1 主配置，将 `sp` 改为 `2`，再将命令中的硬件改为 `Ascend910B3_2Cards`、配置路径改为自备配置路径，并使用独立输出目录。原 SP2 示例文件已清理，模型仍支持 SP2。
 
 两组使用 `execution_profile="sglang_v0_5_21"`，仅改变卡数与 SP（1／2），batch=1、TP/CP/DP/PP=1。处理后的参考视频与目标视频均为宽 1344、高 768、124 帧、24 fps。输入采用官方完整提示词、视频原音轨与独立语音；两份参考音频均按 `124/24` 秒、每声道 207 个 latent 建模。双卡场景使用 SP2，未改成部署工具包中的 TP2 方案。
 
@@ -110,7 +104,7 @@
 |---|---|
 | Qwen、text refiner、联合 DiT | BF16 |
 | Video-VAE encode | FP32 |
-| Video-VAE decode | FP16 |
+| Video-VAE decode | FP16 投影/注意力，FP32 norm/残差；Vector 计算 FP32 |
 | Audio-VAE encode／decode | FP32 |
 
 `layerwise_offload={"prefetch_size":1,"resident_layers":0}` 显式建模 Host→HBM 权重搬运及其与计算的重叠：当前层计算时预取下一层，不保留额外常驻层。SP 分割序列，不将完整层权重按卡数平分。不同去噪步之间重新计搬运，尚未建模跨步预取；组件加载、分组与实际框架的所有内存行为也未逐一复现。本场景不启用 AdaLN 缓存、量化或跳步缓存。
@@ -119,7 +113,7 @@
 
 ### 昇腾融合 Attention 成本算子
 
-选择 `Ascend910B3`（含兼容别名 `Ascend910B`）时，MiniMax-H3 图中的全部 `FlashAttentionOperator` 自动替换为 `NpuFusedInferAttentionScoreOperator`。参数类与算子从 `rooflang.programs.models.magi2_preview.operators` 导出；实现位于 `_cost/npu_fused_infer_attention_score.py`。其它硬件与模型继续使用原算子，历史 A5 基线不变。
+选择 `Ascend910B3`（含兼容别名 `Ascend910B`）时，非 decode 图中的 `FlashAttentionOperator` 自动替换为 `NpuFusedInferAttentionScoreOperator`。参数类与算子从 `rooflang.programs.models.magi2_preview.operators` 导出；实现位于 `_cost/npu_fused_infer_attention_score.py`。Video decode 使用独立的实测 FlashAttentionScore 配方，不经过这条替换路径。
 
 这是 `torch.ops.npu.npu_fused_infer_attention_score` **无 `_v2` 接口的解析模型**，不会执行 NPU kernel，也不表示 FA3。参数保留原生接口命名：`num_heads`、`num_key_value_heads`（0 表示 MHA）、`input_layout`、`actual_seq_lengths`、`actual_seq_lengths_kv`、`scale`、`sparse_mode`、`pre_tokens`、`next_tokens`、`inner_precise`、`softmax_lse_flag`。额外的 `batch_size/q_len/kv_len/head_dim` 描述张量存储，`causal` 描述显式布尔三角掩码。当前仅建模 FP16/BF16、TND/BNSD、`sparse_mode=0`、`inner_precise=0`、无界窗口（2147483647）；未支持模式会报错，量化、分页 KV 和任意稀疏掩码不在此参数子集中。[官方 API 语义](https://github.com/Ascend/op-plugin/blob/master/docs/zh/custom_APIs/torch_npu/torch_npu-npu_fused_infer_attention_score.md)
 
@@ -127,12 +121,13 @@
 |---|---|---|
 | 联合 DiT（FL2VA／Ref2VA） | TND；`q_len/kv_len` 为总存储行数；actual lengths 为累计尾边界 | 有效文档与 padding 文档分别计算，无跨文档注意力 |
 | Text refiner | TND；完整文本，空尾段被过滤 | 每 rank 完整计算，SP2 也不拆 heads/rows、不做 all-to-all |
-| Qwen vision、Video-VAE decoder | BNSD；长度为每 batch 存储行数 | 保留视觉文档分段及原有 batch、heads；这是统一 FIA 的建模选择 |
+| Qwen vision | BNSD；长度为每 batch 存储行数 | 保留视觉文档分段及原有 batch、heads；这是 FIA 的建模选择 |
+| Video-VAE decoder | 实测 FlashAttentionScore，BNSD | 独立解码配方，FP16 Cube/FP32 Vector |
 | Qwen text | BNSD、GQA、显式 `(1,S,S)` 布尔因果掩码 | 数学有效对数为 `S(S+1)/2`；计掩码读取，K/V 为本次调用输入，不推断持久缓存 |
 
 锁定 [SGLang `e00930c` 的 Ascend 包装](https://github.com/sgl-project/sglang/blob/e00930c5489053f26d86b179cee0d087f846acbb/python/sglang/multimodal_gen/runtime/layers/attention/backends/ascend_fa.py#L92)确认 DiT 的 TND 接口、`scale=D**-0.5` 和 `softmax_lse_flag=False`。[packed_sequence.py](https://github.com/sgl-project/sglang/blob/e00930c5489053f26d86b179cee0d087f846acbb/python/sglang/multimodal_gen/runtime/pipelines_core/stages/model_specific_stages/minimax_h3/packed_sequence.py#L385) 将联合序列补齐到 64 倍数，构造 `[0,used,padded]`。本例 `82749→82752`，实际传入 `[82749,82752]`，每头有效对数为 `82749²+3²`，不是 `82752²`。Q/K/V/O 仍包含全部 82752 行。Text refiner 保持 6915 行、56 头和 `[6915]`；[固定模型源码](https://github.com/sgl-project/sglang/blob/e00930c5489053f26d86b179cee0d087f846acbb/python/sglang/multimodal_gen/runtime/models/dits/minimax_h3.py#L1347)未对它启用 Ulysses。
 
-所有其它 FA 也按请求统一使用 FIA 成本模型，但 Qwen/VAE 的真实部署分派未逐一核验；CSV 的 `attention_alignment=analytical_fia_substitution` 明确标记这一点。D=72/64 的路径使用 BNSD，不能直接套用 DiT 的 TND 配置。CSV 的 `shape` 保存完整参数，另有 `source_operator`、`atten_mask_shape`、`attention_pairs` 和 `assumption`；配置快照与计划指标的 `attention_model` 保存选择与未校准状态。
+非 decode 的其它 FA 也按请求使用 FIA 成本模型，但 Qwen 的真实部署分派未逐一核验；CSV 的 `attention_alignment=analytical_fia_substitution` 标记这一点。Video decode 的设备分派由提供的实测明细确认。CSV 的 `shape` 保存参数；配置快照与计划指标的 `attention_model` 保存选择与未校准状态。
 
 2026-10-30 按 [CANN 官方 FIA 文档](https://gitee.com/ascend/cann-ops-adv/blob/master/docs/FusedInferAttentionScore.md)重构：`inner_precise=0` 为高精度路径，Cube 保持输入 FP16/BF16，Vector 单独使用 FP32，不再共享 dtype。官方 [类型定义](https://gitee.com/ascend/cann-ops-adv/blob/master/src/transformer/prompt_flash_attention/prompt_flash_attention_base.h)中 BF16 和 FP16 HighPrecision 的 `mmOutputType/softmaxType` 均为 `float`；这不代表 FP16 HighPerformance 路径也采用同样精度。
 
@@ -144,13 +139,7 @@ CSV 额外导出 `cube_compute_dtype/vector_compute_dtype`、`flops_by_dtype`、
 
 ### 关闭逐层卸载的 SP2 场景
 
-如需关闭逐层卸载，官方 profile 支持显式 `"layerwise_offload": false`；省略或 `null` 仍使用默认逐层预取。可复现的 SP2 配置为 `examples/minimax_h3_ref2va_910b_sp2_no_offload.json`，只改变卸载选项，保留 BF16、49 步及 FIA：
-
-```powershell
-.\.venv\Scripts\python.exe -m rooflang --model minimax_h3 --hardware Ascend910B3_2Cards `
-  --config examples/minimax_h3_ref2va_910b_sp2_no_offload.json `
-  --output-dir outputs/minimax_h3_ref2va_910b3_sp2_fia_no_offload
-```
+如需关闭逐层卸载，官方 profile 支持显式 `"layerwise_offload": false`；省略或 `null` 仍使用默认逐层预取。旧无卸载示例配置已清理。可复制 SP1 主配置，设置 `sp=2`、`layerwise_offload=false`，保留 BF16、49 步及 FIA，并使用 `Ascend910B3_2Cards` 运行自备配置。
 
 2026-10-27 重跑：无 `WeightLoad`/`LayerRelease`，165 个 FA 均为 FIA；逐层 Host→HBM 搬运为 0。预加载权重后的已建模总时间为 1617.111 秒，DiT 49 步为 1580.168 秒（32.248 秒/步）。全部组件常驻时每卡权重约 115.351 GiB、容量代理峰值 118.778 GiB，超过 64 GiB，因此报告 `is_valid=false`。SP 不分摊本模型的权重；这里未启用阶段卸载，也未把双卡 HBM 合并。这些时间仅供理论比较，不含首次加载，不能视为可部署方案的实测耗时。
 
@@ -226,13 +215,7 @@ CSV 额外导出 `cube_compute_dtype/vector_compute_dtype`、`flops_by_dtype`、
 
 ### 相同条件下关闭逐层卸载（单卡）
 
-`examples/minimax_h3_ref2va_910b_sp1_no_offload.json` 从单卡逐层卸载运行的输入快照复制，仅将 `layerwise_offload` 改为 `false`。FIA FP32 Vector、49 步及其它请求条件保持一致，也未启用阶段卸载；效率采用当前 B3 预设（计算 0.7、Cube/Vector 访存均为 0.6）。
-
-```powershell
-.\.venv\Scripts\python.exe -m rooflang --model minimax_h3 --hardware Ascend910B3_1Card `
-  --config examples/minimax_h3_ref2va_910b_sp1_no_offload.json `
-  --output-dir outputs/minimax_h3_ref2va_910b3_sp1_fia_fp32_no_offload
-```
+旧单卡无卸载示例配置已清理。同类实验可复制 `examples/minimax_h3_ref2va_910b_sp1.json`，仅将 `layerwise_offload` 改为 `false`，使用 `Ascend910B3_1Card` 运行自备配置并指定独立输出目录。FIA FP32 Vector、49 步及其它请求条件保持一致，也未启用阶段卸载；效率采用当前 B3 预设（计算 0.7、Cube/Vector 访存均为 0.6）。
 
 无卸载结果需要重新运行生成；检查 `summary.json` 的容量判定后再使用时延。此模式假设权重已预加载，不含首次加载时间。
 
@@ -314,7 +297,7 @@ H3 复用 MAGI 的成本算子和 analytical kernel；本包补充 Gelu、LayerN
 
 ## 近似与局限
 
-- Audio ConvTranspose1D 用显式上采样后的 Conv1D 负载 proxy；Video-VAE GroupNorm 用 RMSNorm proxy；Qwen patch embed 用等价 linear 负载。shape、模块顺序和配置结构与这些算子成本近似分别描述。
+- Video/Audio decode 使用显式 kernel 配方，详见 [decode 建模说明](minimax_h3_decode.md)。Video-VAE encoder 的 norm 与 Qwen patch embed 仍保留原有算子近似；实测确认的 decode 结构与尚未校准的 kernel 效率分别描述。
 - 通用 FlashAttention 只计 Q/K/V/O 边界流量；910B3 的 FIA 模型另计显式 mask/LSE，并把联合 DiT 的有效序列和尾部 padding 分开计算注意力。两者均未估计 tile 重读、片上容量和 kernel workspace；Qwen 视觉 attention 保留文档边界。
 - 冻结 profile 的内存为 indexed 权重、持久张量和最大单算子 activation proxy；逐层卸载 profile 使用暂存权重及激活 proxy。二者均未覆盖完整 tensor lifetime、workspace、allocator 峰值和框架保留。
 - FP16 是冻结工作负载精度。`sglang_v0_5_21` 按组件区分 BF16／FP32／FP16，但单组件内部的强制精度、cast 和融合行为仍需逐算子核对；B3 的 BF16 等效吞吐及 FP32 Vector 比率是明确假设。

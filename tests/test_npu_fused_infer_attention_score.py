@@ -173,10 +173,10 @@ def attention_architecture(component):
 
 @pytest.mark.parametrize("component", [
     "qwen_vision", "qwen_text", "transformer_text_refiner",
-    "transformer", "transformer_ref", "video_vae_decoder",
+    "transformer", "transformer_ref",
 ])
 @pytest.mark.parametrize("sp", [1, 2])
-def test_910b3_routes_every_h3_attention_component_and_preserves_dtype(component, sp):
+def test_910b3_routes_non_decode_h3_attention_and_preserves_dtype(component, sp):
     mm = {"execution_profile": "sglang_v0_5_21", "qwen_attention_segments": [3, 5]}
     graph, _ = build_component(component, attention_architecture(component), mm, 8,
                                Ascend910B3(sp), sp=sp)
@@ -184,7 +184,7 @@ def test_910b3_routes_every_h3_attention_component_and_preserves_dtype(component
     attention = [k for k in kernels if isinstance(k.operator, NpuFusedInferAttentionScoreOperator)]
     assert attention
     assert not any(type(k.operator) is FlashAttentionOperator for k in kernels)
-    dtype = "fp16" if component == "video_vae_decoder" else "bf16"
+    dtype = "bf16"
     for kernel in attention:
         assert kernel.operator.compute_dtype == dtype
         assert set(kernel.flops_by_dtype) == {dtype + ":cube", "fp32:vector"}
@@ -250,7 +250,7 @@ def test_other_hardware_retains_legacy_refiner_sequence_parallelism():
 
 @pytest.mark.parametrize("component", [
     "qwen_vision", "qwen_text", "transformer_text_refiner",
-    "transformer", "transformer_ref", "video_vae_decoder",
+    "transformer", "transformer_ref",
 ])
 @pytest.mark.parametrize("sp", [1, 2])
 def test_910b3_explicit_generic_fa_preserves_original_operator_cost(component, sp):

@@ -24,8 +24,6 @@ py -3 -m venv .venv
 ```powershell
 .\.venv\Scripts\python.exe -m rooflang --model magi2_preview --hardware B300Cluster1Node --config examples/magi2_i2v.json --output-dir outputs/magi2_i2v
 .\.venv\Scripts\python.exe -m rooflang --model magi2_preview --hardware B300Cluster1Node --config examples/magi2_t2v.json --output-dir outputs/magi2_t2v
-.\.venv\Scripts\python.exe -m rooflang --model minimax_h3 --hardware A5_pr_server --config examples/minimax_h3_fl2va.json --output-dir outputs/h3_fl2va
-.\.venv\Scripts\python.exe -m rooflang --model minimax_h3 --hardware A5_pr_server --config examples/minimax_h3_ref2va.json --output-dir outputs/h3_ref2va
 ```
 
 命令行参数覆盖 JSON 中同名参数；其余使用模型随包提供的默认配置。`--stage <阶段名>` 只运行一个阶段，默认 `all`。`--help` 列出可用参数；完整模型参数通过 JSON 设置。
@@ -41,8 +39,9 @@ MiniMax-H3 的 `fl2va` 包含首帧／尾帧／首尾两帧条件；`ref2va` 支
 
 ```powershell
 .\.venv\Scripts\python.exe -m rooflang --model minimax_h3 --hardware Ascend910B3_1Card --config examples/minimax_h3_ref2va_910b_sp1.json --output-dir outputs/minimax_h3_ref2va_910b3_sp1
-.\.venv\Scripts\python.exe -m rooflang --model minimax_h3 --hardware Ascend910B3_2Cards --config examples/minimax_h3_ref2va_910b_sp2.json --output-dir outputs/minimax_h3_ref2va_910b3_sp2
 ```
+
+`examples/` 仅保留上述 MiniMax-H3 SP1 主配置。双卡实验可复制该配置，将 `sp` 改为 `2`，并选择 `Ascend910B3_2Cards` 硬件；旧通用、FA 和无卸载示例配置已清理。
 
 完整条件长度为 6915 rows，packed rows 为 82749。Host DMA 32 GB/s、HCCS 每方向 28 GB/s 等参数尚未实测校准，容量 proxy 不含 workspace；旧 910B 短 prompt／整阶段驻留结果不适用。来源、推导和限制见 [910B3 官方 Ref2VA 场景](docs/minimax_h3.md#910b3官方-ref2va-单卡与双卡)。
 

@@ -83,7 +83,7 @@ def apply_layerwise_offload(graph, placement, hardware, component, *,
         layer_ids = {
             k.csv_metadata['layer_idx'] for k in ordered
             if k.csv_metadata['operator'] in (
-                'FlashAttentionOperator', 'NpuFusedInferAttentionScoreOperator')
+                'FlashAttentionOperator', 'NpuFusedInferAttentionScoreOperator', 'FlashAttentionScore')
         }
     layers = defaultdict(list)
     for kernel in ordered:
@@ -95,6 +95,8 @@ def apply_layerwise_offload(graph, placement, hardware, component, *,
         layer_weights = {}
         for kernel in kernels:
             for name, tensor in list(kernel.weights.items()):
+                if tensor.storage_bytes == 0:
+                    continue
                 port = f'weight_{len(layer_weights)}'
                 layer_weights[port] = tensor
                 view = Tensor(tensor.dtype, tensor.shape, weight_id=tensor.weight_id,

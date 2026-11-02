@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from rooflang.language.graph import ComputeGraph
 from rooflang.language.hardware.component import Compute
 from rooflang.language.placement import Placement
+from rooflang.language.tensor import Tensor
 from rooflang.language.kernels.comm import CommKernel
 from rooflang.programs.models.magi2_preview.bridge import AnalyticalKernel, _tensor
 from rooflang.programs.models.magi2_preview.operators import (
@@ -13,9 +14,18 @@ from rooflang.programs.models.magi2_preview.operators import (
 from rooflang.programs.presets.ascend910b import Ascend910B3
 from .compat import BlockFactory, Parallel, OpType, QuantConfig
 from .offload import apply_layerwise_offload
+from .decode_ops import DecodeOperator
 from . import blocks, mlp, embedding  # register the finite H3 recipe set
 
 class H3Kernel(AnalyticalKernel):
+    def __init__(self, operator, metadata, weight_id):
+        super().__init__(operator, metadata, weight_id)
+        if isinstance(operator, DecodeOperator) and not operator.weight_saved_bytes:
+            # Generated weight layouts are read without owning permanent storage.
+            for name, tensor in list(self.weights.items()):
+                self.weights[name] = Tensor(tensor.dtype, tensor.shape,
+                                            weight_id=tensor.weight_id, storage_bytes=0)
+
     @property
     def flops_by_dtype(self):
         c = self.operator.get_compute_component()
@@ -68,6 +78,12 @@ class H3Collective(CommKernel):
 
 
 def component_nodes(component, architecture, mm, seq_len, sp=1):
+    if component == 'video_vae_decoder':
+        from .video_decode import video_decode_nodes, video_decode_stitch_nodes
+        return video_decode_stitch_nodes(mm) if mm.get('decode_stitch') else video_decode_nodes(seq_len, mm)
+    if component == 'audio_vae_decoder':
+        from .audio_decode import audio_decode_nodes
+        return audio_decode_nodes(mm)
     cfg = next(c for c in architecture['components'] if c['name'] == component)
     local = math.ceil(seq_len / sp)
     context = SimpleNamespace(batch_size=1, seq_len=local, kv_len=local,
@@ -136,6 +152,12 @@ def build_component(component, architecture, mm, seq_len, hardware, sp=1):
               'kv_storage_dtype':op.kv_storage_dtype,'component':component,'recipe_node_index':index,
               'compute_scope':'critical_rank','source_weight_saved':details.get('weight_saved',0),
               'activation_peak_bytes_proxy':details.get('activation',0)}
+        if isinstance(op, DecodeOperator):
+            meta.update(operator=op.params.op_type, decode_model='trace_aligned',
+                        source_operator=op.params.op_type,
+                        vector_compute_dtype=op.vector_compute_dtype,
+                        cube_compute_dtype=op.compute_dtype,
+                        assumption='measured_topology_analytical_costs_no_latency_fit')
         if isinstance(op, NpuFusedInferAttentionScoreOperator):
             meta.update(source_operator='torch.ops.npu.npu_fused_infer_attention_score',
                         source_documentation=op.source_url,
