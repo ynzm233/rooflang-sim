@@ -1,13 +1,15 @@
 """FP32 audio decode reconstructed from the measured Ascend leaf kernels.
 
 The trace supplies topology and layout, never elapsed-time constants. Transcendental
-functions count as one vector operation; their hardware implementation and the
-slow grouped transpose algorithm remain outside this analytical Roofline model.
+functions count as one vector operation. Transpose uses a generic phase-tiled
+model on 910B3; it does not reconstruct the measured CANN kernel implementation.
 """
 import math
 
 from .compat import ModuleType, Node, OpType
 from .decode_ops import DecodeOperator
+from .audio_transpose import AudioTransposeOperator
+from .transpose_tiling import TransposeGeometry
 
 
 def audio_decode_nodes(mm):
@@ -52,9 +54,10 @@ class _AudioDecode:
     def __init__(self):
         self.nodes = []
 
-    def add(self, name, kind, inputs=(), outputs=(), *, weights=(), metadata=(), **kwargs):
+    def add(self, name, kind, inputs=(), outputs=(), *, weights=(), metadata=(),
+            operator_class=DecodeOperator, **kwargs):
         tensor = lambda shapes: [(shape, 'fp32') for shape in shapes]
-        operator = DecodeOperator(kind, inputs=tensor(inputs) + list(metadata), outputs=tensor(outputs),
+        operator = operator_class(kind, inputs=tensor(inputs) + list(metadata), outputs=tensor(outputs),
                                   weights=tensor(weights), **kwargs)
         self.nodes.append(Node('AudioDecoder_' + name, operator, OpType.COMPUTE,
                                ModuleType.VAEDECODER, 1024, 0,
@@ -109,10 +112,14 @@ class _AudioDecode:
         flops = 2 * batch * work_length * math.prod(weight)
         if bias:
             flops += batch * cout * out
+        transpose_args = ({'operator_class': AudioTransposeOperator,
+                           'geometry': TransposeGeometry(batch, cin, cout, length, kernel,
+                               stride, padding, dilation, groups, bias)} if transpose else {})
         self.add(name, 'Conv2DTranspose' if transpose else 'Conv2D',
                  [physical_input, blocked_weight], [physical_output],
                  weights=[(cout,) if transpose else (1, cout, 1, 1)] if bias else [],
                  metadata=[((4,), 'int32')] if transpose else [], cube_flops=flops,
+                 **transpose_args,
                  attributes={'logical_input_shape': [batch, cin, length],
                              'logical_output_shape': [batch, cout, out],
                              'kernel': kernel, 'stride': stride, 'padding': padding,

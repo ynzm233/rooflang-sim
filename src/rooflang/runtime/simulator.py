@@ -761,7 +761,13 @@ class Simulator:
 
     @staticmethod
     def compute_time_us(kernel: Kernel, device: Compute) -> float:
-        """Return ideal compute time, summing mixed-dtype FLOP segments."""
+        """Use an explicit schedule, or sum ideal mixed-dtype FLOP segments."""
+        scheduled = kernel.scheduled_compute_time_us(device)
+        if scheduled is not None:
+            if (isinstance(scheduled, bool) or not isinstance(scheduled, (int, float))
+                    or not math.isfinite(scheduled) or scheduled < 0):
+                raise ValueError('scheduled compute time must be finite and nonnegative')
+            return scheduled
         flops_by_dtype = kernel.flops_by_dtype
         if flops_by_dtype is None:
             flops_by_dtype = {Simulator._infer_dtype(kernel): kernel.flops}

@@ -15,16 +15,25 @@ from rooflang.programs.presets.ascend910b import Ascend910B3
 from .compat import BlockFactory, Parallel, OpType, QuantConfig
 from .offload import apply_layerwise_offload
 from .decode_ops import DecodeOperator
+from .audio_transpose import AudioTransposeOperator
 from . import blocks, mlp, embedding  # register the finite H3 recipe set
 
 class H3Kernel(AnalyticalKernel):
     def __init__(self, operator, metadata, weight_id):
         super().__init__(operator, metadata, weight_id)
+        details = operator.get_memory_details()
+        self.csv_metadata['activation_peak_bytes_proxy'] = details.get(
+            'activation_peak', details.get('activation', 0))
         if isinstance(operator, DecodeOperator) and not operator.weight_saved_bytes:
             # Generated weight layouts are read without owning permanent storage.
             for name, tensor in list(self.weights.items()):
                 self.weights[name] = Tensor(tensor.dtype, tensor.shape,
                                             weight_id=tensor.weight_id, storage_bytes=0)
+
+    def scheduled_compute_time_us(self, device):
+        if isinstance(self.operator, AudioTransposeOperator) and self.operator.tile_cost is not None:
+            return self.operator.tile_cost.compute_time_us(device.tflops)
+        return None
 
     @property
     def flops_by_dtype(self):
@@ -142,6 +151,8 @@ def build_component(component, architecture, mm, seq_len, hardware, sp=1):
                 actual_seq_lengths_kv=boundaries.copy() if packed else None,
                 scale=p.head_dim ** -0.5, causal=p.causal,
                 quant_config=op.quant_config)
+        if isinstance(op, AudioTransposeOperator) and isinstance(hardware, Ascend910B3):
+            op.enable_tiling(hardware.metadata['official_specification']['ai_core_count'])
         if op.params is not None: op.params.validate()
         details=op.get_memory_details()
         meta={'node_name':node.node_name,'operator':type(op).__name__,'module':node.module.value,
@@ -151,13 +162,24 @@ def build_component(component, architecture, mm, seq_len, hardware, sp=1):
               'communicate_dtype':op.communicate_dtype,
               'kv_storage_dtype':op.kv_storage_dtype,'component':component,'recipe_node_index':index,
               'compute_scope':'critical_rank','source_weight_saved':details.get('weight_saved',0),
-              'activation_peak_bytes_proxy':details.get('activation',0)}
+              'activation_peak_bytes_proxy':details.get('activation_peak',details.get('activation',0))}
         if isinstance(op, DecodeOperator):
             meta.update(operator=op.params.op_type, decode_model='trace_aligned',
                         source_operator=op.params.op_type,
                         vector_compute_dtype=op.vector_compute_dtype,
                         cube_compute_dtype=op.compute_dtype,
                         assumption='measured_topology_analytical_costs_no_latency_fit')
+        if isinstance(op, AudioTransposeOperator):
+            if op.tile_cost is not None:
+                meta.update(decode_model='generic_phase_tiled_transpose',
+                            assumption='trace_topology_generic_algorithm_not_cann_kernel_reconstruction',
+                            transpose_tiling_status='active_910b3',
+                            transpose_schedule=op.tile_cost.to_dict(),
+                            boundary_activation_bytes=op.activation_bytes,
+                            boundary_bias_bytes=op.weight_saved_bytes)
+            else:
+                meta.update(transpose_tiling_status='not_applied_hardware_scope',
+                            transpose_tiling_scope='Ascend910B3_only')
         if isinstance(op, NpuFusedInferAttentionScoreOperator):
             meta.update(source_operator='torch.ops.npu.npu_fused_infer_attention_score',
                         source_documentation=op.source_url,
@@ -179,7 +201,7 @@ def build_component(component, architecture, mm, seq_len, hardware, sp=1):
             kernel=H3Kernel(op,meta,f'{component}:{index}')
             _set_memory_efficiency(kernel, hardware)
             # Reference memory peak excludes kv_cache, reported separately.
-            kernel.csv_metadata['activation_peak_bytes_proxy']=details.get('activation',0)
+            kernel.csv_metadata['activation_peak_bytes_proxy']=details.get('activation_peak',details.get('activation',0))
             if previous_compute is not None:
                 kernel.inputs['previous_traffic']=previous_compute.outputs['traffic']
         graph.add_kernel(kernel)

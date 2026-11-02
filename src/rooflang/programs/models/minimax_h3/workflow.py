@@ -366,7 +366,14 @@ def create_workflow(hardware, config):
             'audio_vae_decoder': {
                 'implementation': 'minimax_h3.audio_decode.audio_decode_nodes',
                 'storage_precision': 'fp32', 'alias_free_snake_count': 127,
-                'vector_compute_dtype': 'fp32'},
+                'vector_compute_dtype': 'fp32',
+                'transpose_cost': {
+                    'model': 'generic_phase_tiled_transpose',
+                    'status': ('active_910b3' if isinstance(hardware, Ascend910B3)
+                               else 'not_applied_hardware_scope'),
+                    'implementation': 'not_cann_kernel_reconstruction',
+                    'calibration': 'none',
+                    'details': 'per_operator_transpose_schedule'}},
             'source_files': ['measured/video_vae_decode.csv', 'measured/audio_vae_decode.csv'],
             'timing': 'analytical_hardware_costs_no_measured_duration_lookup',
             'architecture_scope': 'explicit_device_kernel_recipes',

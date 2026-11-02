@@ -63,6 +63,14 @@ class Kernel:
         """
         return None
 
+    def scheduled_compute_time_us(self, device) -> float | None:
+        """Optional shape-derived schedule time, distinct from executed FLOPs.
+
+        Return None for the default throughput model. Device peaks already
+        include hardware efficiencies; overrides must not apply them again.
+        """
+        return None
+
     def input_read_fraction(self, port: str) -> float:
         """Return the fraction of one input tensor read by this invocation."""
         return 1.0
