@@ -15,29 +15,30 @@ from rooflang.runtime.simulator import OOMError, Simulator
 
 
 class ToyLayer(Kernel):
-    def __init__(self, layer, compute_us, weight_bytes=32_000):
+    def __init__(self, layer, compute_us, cube_tflops, weight_bytes=32_000):
         super().__init__(weights={'w': Tensor('bf16', (weight_bytes // 2,), weight_id=f'w{layer}')}
                          if weight_bytes else {})
         self.compute_us = compute_us
+        self.cube_tflops = cube_tflops
         self.csv_metadata = {'layer_idx': layer, 'operator': 'ToyLayer'}
 
     @property
     def flops_by_dtype(self):
-        # Keep this scheduling fixture at its requested duration under the B3
-        # default 0.7 compute efficiency; peak/efficiency arithmetic is tested
-        # independently in test_ascend910b.py.
-        return {'bf16:cube': self.compute_us * 294_912_000 * 0.7}
+        # Scheduling durations stay fixed when the hardware preset is tuned.
+        return {'bf16:cube': self.compute_us * self.cube_tflops * 1e6}
 
 
 def toy(prefetch=1, *, weight_bytes=32_000, compute_us=2, split=False):
     hardware = Ascend910B3()
+    cube_tflops = hardware.devices[0].tflops['bf16:cube']
     graph = ComputeGraph()
     placement = Placement(hardware, graph)
     kernels = []
     for layer in range(3):
-        pieces = [ToyLayer(layer, compute_us, weight_bytes)]
+        pieces = [ToyLayer(layer, compute_us, cube_tflops, weight_bytes)]
         if split:
-            pieces = [ToyLayer(layer, 0, weight_bytes), ToyLayer(layer, compute_us, 0)]
+            pieces = [ToyLayer(layer, 0, cube_tflops, weight_bytes),
+                      ToyLayer(layer, compute_us, cube_tflops, 0)]
         for kernel in pieces:
             graph.add_kernel(kernel)
             placement.set_kernel_device(kernel, hardware.devices[0])

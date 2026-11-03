@@ -83,7 +83,8 @@ def apply_layerwise_offload(graph, placement, hardware, component, *,
         layer_ids = {
             k.csv_metadata['layer_idx'] for k in ordered
             if k.csv_metadata['operator'] in (
-                'FlashAttentionOperator', 'NpuFusedInferAttentionScoreOperator', 'FlashAttentionScore')
+                'FlashAttentionOperator', 'NpuFusedInferAttentionScoreOperator',
+                'QwenVisionFIA', 'QwenTextFIA', 'FlashAttentionScore')
         }
     layers = defaultdict(list)
     for kernel in ordered:

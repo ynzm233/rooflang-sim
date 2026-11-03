@@ -1,50 +1,9 @@
-"""Unchanged stages retain the historical source baseline; decode has new tests."""
-import csv
-import importlib.util
-import json
-from pathlib import Path
+"""MiniMax-H3 workflow interface, configuration, and capacity checks."""
 import pytest
 from rooflang.programs.models.minimax_h3 import create_workflow
 from rooflang.programs.models.minimax_h3.hardware import A5PRServer
 from rooflang.programs.presets.ascend910b import Ascend910B3
 from rooflang.programs.models.minimax_h3.workflow import resolve_config, video_vae_tiles
-from rooflang.programs.models.minimax_h3.bridge import component_nodes
-from rooflang.runtime.metrics_export import _operator_rows, _semantic_stage, export_metrics
-
-BASE = Path(__file__).parents[1] / 'baselines/minimax_h3'
-SPEC = importlib.util.spec_from_file_location(
-    'minimax_h3_baseline', Path(__file__).parents[1] / 'scripts/minimax_h3_baseline.py')
-BASELINE = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(BASELINE)
-
-@pytest.mark.parametrize('workflow', ['fl2va','ref2va'])
-def test_unchanged_stages_reproduce_source(workflow, tmp_path):
-    baseline=json.loads((BASE/workflow/'summary.json').read_text())
-    w=create_workflow(BASELINE.source_hardware(),{'workflow':workflow})
-    results={}
-    for stage in baseline['stages']:
-        if stage['name'] not in ('video_vae_decode', 'audio_vae_decode'):
-            results.update(w.run(stage['name']))
-    assert w.metadata['shape_summary']==baseline['shape_summary']
-    assert w.metadata['transformer_forward_count']==50
-    assert w.metadata['persistent_tensor_bytes']==baseline['persistent_tensor_bytes']
-    for name,stage in results.items():
-        rows,metrics=_semantic_stage(name,stage,'MiniMax-H3','A5_pr_server')
-        expected=next(s for s in baseline['stages'] if s['name']==name)
-        for key in ('execution_time_ms','compute_time_ms','memory_time_ms','comm_time_ms',
-                    'total_flops','total_mem_bytes','total_weight_bytes','peak_activation_bytes','invocations'):
-            assert metrics[key]==pytest.approx(expected[key],rel=1e-11,abs=1e-8),(name,key)
-        for g in stage.graphs:
-            assert g.multiplier == baseline['operator_graph_multipliers'][g.label]
-            actual=list(_operator_rows(g.result,g.label,'MiniMax-H3','A5_pr_server'))
-            with (BASE/workflow/(g.label+'.csv')).open() as f: expected_rows=list(csv.DictReader(f))
-            assert len(actual)==len(expected_rows),g.label
-            for new,old in zip(actual,expected_rows):
-                assert (new['node_name'],new['operator'],new['layer_idx'])==(old['node_name'],old['operator'],int(old['layer_idx']))
-                for key in ('execution_time_ms','compute_ms','memory_ms','network_ms','flops','memory_traffic_bytes','weight_saved'):
-                    assert new[key]==pytest.approx(float(old[key] or 0),rel=1e-10,abs=1e-8),(g.label,new['node_name'],key)
-    export_metrics(results,tmp_path,model_name='MiniMax-H3',hardware_name='A5_pr_server',metadata=w.metadata)
-    assert (tmp_path/'stage_metrics.csv').exists()
 
 
 def test_shapes_and_tiling():

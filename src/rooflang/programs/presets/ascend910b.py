@@ -45,9 +45,9 @@ DERIVED_SPEC = {
 # Host links model ideal independent per-device bandwidth, not a measured PCIe
 # configuration. The hardware preset does not imply that host compute is timed.
 SIMULATION_ASSUMPTIONS = {
-    "cube_efficiency": 0.7,
-    "vector_efficiency": 0.7,
-    "cube_memory_efficiency": 0.6,
+    "cube_efficiency": 0.8,
+    "vector_efficiency": 0.6,
+    "cube_memory_efficiency": 0.8,
     "vector_memory_efficiency": 0.6,
     # Keep physical HBM and DMA bandwidth separate from operator utilization.
     # Model bridges apply the unit-specific values to each kernel's local time.
@@ -76,8 +76,6 @@ SIMULATION_ASSUMPTIONS = {
     "host_memory_capacity_gib": 1536.0,
     "host_memory_capacity_gb": 1536 * 1024**3 / 1e9,
     "host_memory_basis": "toolkit reports 1.5 TiB physical RAM; no host reserve modeled",
-    "host_memory_source_path": "/Users/z.w.y/Desktop/MiniMax-H3-910B部署工具包/docs/"
-                               "MiniMax-H3-910B部署与Profiling校准手册.md",
     "host_memory_source_section": "server resource table: RAM total 1.5 TiB",
     "host_bandwidth_gbs_per_device_per_direction": 32.0,
     "host_bandwidth_basis": "ideal assumed host link, not measured or SKU-verified PCIe bandwidth",
@@ -88,7 +86,7 @@ SIMULATION_ASSUMPTIONS = {
     "dma_basis": "one independent transfer engine per NPU for copy/compute overlap",
     "dma_hbm_bandwidth_basis": "independent 1600 GB/s HBM write/read edge; no shared HBM contention",
     "dma_transfer_scope": "critical-rank transfers; host root-complex contention not modeled",
-    "calibration": "uncalibrated user-specified efficiencies: compute 0.7, Cube HBM 0.6, Vector HBM 0.6; no measured latency calibration",
+    "calibration": "uncalibrated user-specified efficiencies: Cube compute 0.8, Vector compute 0.6, Cube HBM 0.8, Vector HBM 0.6; no measured latency calibration",
 }
 
 

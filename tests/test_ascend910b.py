@@ -11,9 +11,19 @@ from rooflang.language.tensor import Tensor
 from rooflang.programs.experiments import main as main_module
 from rooflang.programs.models.minimax_h3.bridge import H3Collective
 from rooflang.programs.models.minimax_h3.workflow import create_workflow
-from rooflang.programs.presets.ascend910b import Ascend910B, Ascend910B3
+from rooflang.programs.presets.ascend910b import Ascend910B, Ascend910B3, SIMULATION_ASSUMPTIONS
 from rooflang.runtime.reproducibility import config_snapshot
 from rooflang.runtime.simulator import OOMError, Simulator
+
+
+@pytest.fixture
+def hardware_efficiencies(monkeypatch):
+    for name, value in {
+        "cube_efficiency": 0.8, "vector_efficiency": 0.6,
+        "cube_memory_efficiency": 0.8, "vector_memory_efficiency": 0.6,
+        "memory_efficiency": 1.0,
+    }.items():
+        monkeypatch.setitem(SIMULATION_ASSUMPTIONS, name, value)
 
 
 class ComputeSegments(Kernel):
@@ -40,13 +50,14 @@ def run_single(hardware, kernel):
 
 
 @pytest.mark.parametrize(("segments", "expected_us"), [
-    ({"fp16:cube": 294_912_000, "fp16:vector": 36_864_000}, 3.0),
-    ({"bf16:cube": 294_912_000, "bf16:vector": 36_864_000}, 3.0),
-    ({"fp32:cube": 73_728_000, "fp32:vector": 18_432_000}, 3.0),
+    ({"fp16:cube": 294_912_000, "fp16:vector": 36_864_000}, 55 / 12),
+    ({"bf16:cube": 294_912_000, "bf16:vector": 36_864_000}, 55 / 12),
+    ({"fp32:cube": 73_728_000, "fp32:vector": 18_432_000}, 55 / 12),
 ])
-def test_cube_and_vector_peaks_drive_separate_costs(segments, expected_us):
+def test_cube_and_vector_peaks_drive_separate_costs(segments, expected_us, hardware_efficiencies):
     result = run_single(Ascend910B(), ComputeSegments(segments))
-    assert result.total_time_us == pytest.approx(expected_us / 0.7)
+    # Cube takes 1 / 0.8 us; Vector takes 2 / 0.6 us, totaling 55 / 12 us.
+    assert result.total_time_us == pytest.approx(expected_us)
     with pytest.raises(ValueError, match="no compute for dtype 'fp8:cube'"):
         run_single(Ascend910B(), ComputeSegments({"fp8:cube": 1_000_000}))
 
@@ -69,14 +80,12 @@ def test_hbm_bandwidth_and_physical_capacity_units():
 
 
 @pytest.mark.parametrize(("efficiency", "expected_us"), [
-    (0.6, 5.0), (0.3, 10.0),
+    (0.8, 3.75), (0.6, 5.0), (0.3, 10.0),
 ])
 def test_local_memory_efficiency_changes_time_without_inflating_bytes(
-    efficiency, expected_us,
+    efficiency, expected_us, hardware_efficiencies,
 ):
     hardware = Ascend910B3()
-    assumptions = hardware.metadata["simulation_assumptions"]
-    assert assumptions["cube_memory_efficiency"] == assumptions["vector_memory_efficiency"] == 0.6
     kernel = ComputeSegments(inputs={"x": Tensor("fp16", (800_000,))},
                              outputs={"y": Tensor("fp16", (1_600_000,))})
     physical_result = run_single(hardware, kernel)
@@ -154,12 +163,12 @@ def test_host_transfer_uses_host_link_and_keeps_hbm_local(direction, memory_effi
     assert kernel.transferred_bytes == 640_000
 
 
-def test_dma_prefetch_overlaps_independent_npu_compute():
+def test_dma_prefetch_overlaps_independent_npu_compute(hardware_efficiencies):
     hardware = Ascend910B3()
     host_tensor = Tensor("fp16", (160_000,))
     copy = ComputeSegments(inputs={"source": host_tensor},
                            outputs={"destination": Tensor("fp16", (160_000,))})
-    compute = ComputeSegments({"fp16:cube": 2_064_384_000})
+    compute = ComputeSegments({"fp16:cube": 2_359_296_000})
     graph = ComputeGraph()
     graph.add_kernel(copy)
     graph.add_kernel(compute)
@@ -202,7 +211,7 @@ def test_cli_selects_matching_hardware_and_h3_sequence_parallelism(
             create_workflow(Ascend910B(), {"sp": 2})
 
 
-def test_snapshot_preserves_sources_and_uncalibrated_capacity_assumptions():
+def test_snapshot_preserves_sources_and_uncalibrated_capacity_assumptions(hardware_efficiencies):
     hardware = Ascend910B(2)
     snapshot = config_snapshot(
         SimpleNamespace(metadata={}), model_name="minimax_h3",
@@ -215,8 +224,9 @@ def test_snapshot_preserves_sources_and_uncalibrated_capacity_assumptions():
     assert saved["derived_specification"]["vector_tflops"]["fp16"] == 18.432
     assert Ascend910B is Ascend910B3
     assumptions = saved["simulation_assumptions"]
-    assert assumptions["cube_efficiency"] == assumptions["vector_efficiency"] == 0.7
-    assert assumptions["cube_memory_efficiency"] == 0.6
+    assert assumptions["cube_efficiency"] == 0.8
+    assert assumptions["vector_efficiency"] == 0.6
+    assert assumptions["cube_memory_efficiency"] == 0.8
     assert assumptions["vector_memory_efficiency"] == 0.6
     assert assumptions["memory_efficiency"] == 1.0
     assert assumptions["memory_capacity_gb"] == 68.719476736

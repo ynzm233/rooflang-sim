@@ -46,7 +46,7 @@ class MiniMaxH3QwenVisionAttentionBlock(MHABlock):
         if metadata.parallel_strategies.get(Parallel.CP, 1) != 1:
             raise ValueError('MiniMax-H3 segmented Qwen vision requires CP=1')
         super().build(metadata, layer_idx)
-        segments = Counter(metadata.multimodal_config['qwen_attention_segments'])
+        packed_rows = metadata.multimodal_config.get('_qwen_vision_packed_rows')
         nodes = []
         for node in self.nodes:
             if node.node_name in ('Attn_QNorm', 'Attn_KNorm'):
@@ -54,10 +54,15 @@ class MiniMaxH3QwenVisionAttentionBlock(MHABlock):
             if node.node_name == 'Attn_RmsNorm':
                 node = replace(node, node_name='QwenVision_LayerNorm', operator=LayerNormOperator(batch_seq=metadata.batch_size * metadata.seq_len, dim=self.hidden_size))
             if isinstance(node.operator, FlashAttentionOperator):
-                for length, count in segments.items():
+                if packed_rows is not None:
                     params = vars(node.operator.params).copy()
-                    params.update(q_len=length, kv_len=length, batch_size=metadata.batch_size * count)
-                    nodes.append(replace(node, node_name=f'QwenVision_FA_S{length}', operator=FlashAttentionOperator(**params)))
+                    params.update(q_len=packed_rows, kv_len=packed_rows, batch_size=1)
+                    nodes.append(replace(node, node_name='QwenVision_FA_Packed', operator=FlashAttentionOperator(**params)))
+                else:
+                    for length, count in Counter(metadata.multimodal_config['qwen_attention_segments']).items():
+                        params = vars(node.operator.params).copy()
+                        params.update(q_len=length, kv_len=length, batch_size=metadata.batch_size * count)
+                        nodes.append(replace(node, node_name=f'QwenVision_FA_S{length}', operator=FlashAttentionOperator(**params)))
             else:
                 nodes.append(node)
         self.nodes = nodes

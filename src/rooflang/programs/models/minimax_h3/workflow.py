@@ -9,7 +9,8 @@ from rooflang.programs.experiments.simulation import simulate
 from rooflang.programs.experiments.workflow import Workflow
 from rooflang.runtime.stages import GraphResult, StageResult
 from .config import MiniMaxH3MultimodalConfig
-from .bridge import build_component, component_nodes
+from .bridge import build_component, component_nodes, validate_transformer_fia_compute_efficiency
+from .qwen_fia import QwenVisionFIAParams, QwenTextFIAParams
 from rooflang.programs.presets.ascend910b import Ascend910B3
 
 ROOT = Path(__file__).parent
@@ -24,6 +25,25 @@ def resolve_config(overrides):
     attention_backend = overrides.pop('attention_backend', 'auto')
     if attention_backend not in ('auto', 'flash_attention'):
         raise ValueError('attention_backend must be auto or flash_attention')
+    fia_efficiency = overrides.pop('transformer_fia_compute_efficiency', None)
+    validate_transformer_fia_compute_efficiency(fia_efficiency)
+    qwen_fia = overrides.pop('qwen_fia', {})
+    if not isinstance(qwen_fia, dict) or set(qwen_fia) - {'vision', 'text'}:
+        raise ValueError('qwen_fia must be an object with vision and/or text options')
+    resolved_fia = {}
+    for name, cls in (('vision', QwenVisionFIAParams), ('text', QwenTextFIAParams)):
+        keys = {'q_tile', 'kv_tile', 'cube_alignment'}
+        if name == 'text':
+            keys.add('execution_mode')
+        options = qwen_fia.get(name, {})
+        if not isinstance(options, dict) or set(options) - keys:
+            raise ValueError(f'Unknown or invalid qwen_fia.{name} options')
+        try:
+            params = cls(**options)
+            params.validate()
+        except (TypeError, ValueError) as error:
+            raise ValueError(f'qwen_fia.{name}: {error}') from error
+        resolved_fia[name] = {key: getattr(params, key) for key in sorted(keys)}
     execution_profile = overrides.pop('execution_profile', 'legacy')
     if execution_profile not in ('legacy', OFFICIAL_EXECUTION_PROFILE):
         raise ValueError('Unknown MiniMax-H3 execution_profile')
@@ -62,6 +82,9 @@ def resolve_config(overrides):
         raise ValueError('MiniMax-H3 SP must be one of 1,2,4,8')
     data=_load('workload.json')
     data['attention_backend'] = attention_backend
+    if fia_efficiency is not None:
+        data['transformer_fia_compute_efficiency'] = fia_efficiency
+    data['qwen_fia'] = resolved_fia
     if official:
         data['num_inference_steps'] = 49
         data['assume_stage_unload'] = False
@@ -114,6 +137,9 @@ def create_workflow(hardware, config):
     cfg,sp,resolved=resolve_config(config)
     architecture=_load('architecture.json'); mm=cfg.runtime_multimodal_config()
     mm['attention_backend'] = resolved['attention_backend']
+    if 'transformer_fia_compute_efficiency' in resolved:
+        mm['transformer_fia_compute_efficiency'] = resolved['transformer_fia_compute_efficiency']
+    mm['qwen_fia'] = deepcopy(resolved['qwen_fia'])
     official = resolved.get('execution_profile') == OFFICIAL_EXECUTION_PROFILE
     layerwise_enabled = official and bool(resolved['layerwise_offload'])
     compute_dtype = 'bf16' if official else 'fp16'
@@ -337,12 +363,17 @@ def create_workflow(hardware, config):
             'dit_input_layout': 'TND',
             'dit_actual_seq_lengths': sorted({mm['packed_rows'], (mm['packed_rows'] + 63) // 64 * 64}),
             'text_refiner_sp': 1,
-            'other_attention_layout': 'BNSD',
-            'non_dit_scope': 'analytical_substitution_not_runtime_verified',
+            'qwen_vision': {'operator': 'QwenVisionFIA', 'input_layout': 'TND',
+                            'sequence_boundaries': 'cumulative_qwen_attention_segments',
+                            **resolved['qwen_fia']['vision'], 'tiling_calibrated': False},
+            'qwen_text': {'operator': 'QwenTextFIA', 'input_layout': 'BNSD',
+                          **resolved['qwen_fia']['text'], 'tiling_calibrated': False},
+            'qwen_tiling_scope': 'public_source_candidate_runtime_unverified_no_latency_fit',
             'source_documentation': 'https://gitee.com/ascend/cann-ops-adv/blob/master/docs/FusedInferAttentionScore.md',
             'cube_compute_dtype': 'input_fp16_or_bf16',
             'vector_compute_dtype': 'fp32',
-            'vector_flops_per_pair': 15,
+            'dit_vector_flops_per_pair': 15,
+            'qwen_vector_cost': 'executed_rectangles_plus_online_row_rescale_proxy',
             'memory_unit_attribution': 'Q/K/V=cube; O/mask/LSE=vector; workspace/L2 traffic unmodeled',
             'kernel_efficiency_calibrated': False,
         }
