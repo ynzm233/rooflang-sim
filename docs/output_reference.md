@@ -66,6 +66,20 @@
 
 MAGI 的 `request_per_second` 表示已建模加速器工作范围内的 clips/s，不能视为包含 CPU、冷加载、封装的完整服务吞吐。`end_to_end_timing_complete=False`、`timing_status`、`compute_scope` 和内存状态字段用于声明这些限制。其他模型也必须按自己的统计范围解释吞吐。
 
+### MiniMax-H3 专用统计
+
+| 字段组 | 当前含义 |
+|---|---|
+| `attention_model`、`attention_alignment`、`qwen_tiling`、`tiling_status` | 选择的 attention 成本算子、文档布局、Q/KV tile 候选值及是否经运行时验证 |
+| `attention_pairs`、`executed_attention_pairs`、`cube_attention_pairs` | 分别为数学有效 pair、执行矩形 pair 和 Cube 对齐 pair；Qwen 文本默认全矩阵执行，不能按因果数学 pair 直接折半 |
+| `cube_compute_dtype/vector_compute_dtype`、`memory_bytes_by_unit`、`memory_efficiency_by_unit`、`local_memory_efficiency` | 单元精度、物理流量与有效访存效率；效率改变时间，不改变物理字节或驻留量 |
+| `transpose_schedule`、`activation_peak_bytes_proxy` | B3 音频转置卷积的相位／分块／关键核心调度、执行工作量与重读流量；容量代理使用边界张量，不累加 tile 重读 |
+| `host_to_device_bytes`、`copy_time_ms`、`exposed_transfer_time_ms`、`weight_peak_bytes` | 每关键 rank 的逐层卸载传输、DMA 资源时间、暴露搬运时间与层缓冲区权重峰值；存在计算重叠时不可直接把 copy_time 加到阶段时间 |
+
+音频转置卷积的 `flops` 为参考数学算量，`flops_by_dtype` 为包含 tile padding 的执行算量；其计算时间按关键核心波次计算，不保证等于执行总 FLOPs 除整卡吞吐。Qwen FIA 的计算工作量也包含分块／对齐代理，须结合其 pair 字段解释。当前假设见 [H3 模型](minimax_h3.md) 与 [decode 模型](minimax_h3_decode.md)。
+
+`measured_execution_time_ms` 是仿真器所选测量窗口内的时间，名称不代表来自物理 NPU profiler。外部实测的 `kernel_total_ms`、`device_busy_ms`、`device_span_ms` 和 `host_total_ms` 仅由独立比对输入提供；未提供的实测值不能由仿真补齐。
+
 ## 2. 重复图与结果重建
 
 对于已计时工作，一次逻辑核记录的 FLOPs/流量只代表一次图调用。阶段总算量与流量为：

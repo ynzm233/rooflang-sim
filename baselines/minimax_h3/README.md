@@ -1,15 +1,14 @@
-# MiniMax-H3 历史源基线
+# MiniMax-H3 回归数据
 
-本目录的 `fl2va/`、`ref2va/`、`source/` 和 `provenance.json` 是源工程
-`model_Sim` 提交 `f27d4bdfa823fe0b151749cc5d1e1d734e7fb583` 的冻结复现证据。
-`source/` 内的 YAML 和记录的 SHA-256 保持原样，不作为当前运行配置加载。
+本目录供 `scripts/minimax_h3_baseline.py` 执行限定范围的源一致性检查，覆盖 Qwen vision、Qwen text、条件 VAE、text refiner 与联合 DiT 五个阶段。脚本使用独立的验证硬件参数；本目录数据不作为当前 CLI 的输入或当前 B3 性能结果。
 
-2026-10-15，生产 `A5_pr_server` 已改用官方 950PR 规格和十进制内存单位，
-保留必要的效率、通信仿真假设。当前有效配置见
-[`hardware.py`](../../src/rooflang/programs/models/minimax_h3/hardware.py)，
-参数依据见 [硬件规格与仿真假设](../../docs/minimax_h3.md#硬件规格与仿真假设)，
-当前运行结果见 [模型文档](../../docs/minimax_h3.md#运行与复现)。
+当前模型的完整流程验证使用 [Ref2VA 主配置](../../examples/minimax_h3_ref2va_910b_sp1.json) 与 Ascend910B3；decode 使用专门的结构和成本验证脚本：
 
-`python scripts/minimax_h3_baseline.py` 使用脚本内隔离的历史硬件重放本目录，
-校验模型算子和工作量与源工程一致。该历史硬件不注册到日常 CLI；
-新硬件的计算、访存、容量和通信验证见 `tests/test_a5_950pr.py`。
+```powershell
+.\.venv\Scripts\python.exe -m rooflang --model minimax_h3 --hardware Ascend910B3_1Card `
+  --config examples/minimax_h3_ref2va_910b_sp1.json --output-dir outputs/h3-ref2va
+.\.venv\Scripts\python.exe scripts/minimax_h3_decode_validation.py `
+  --measured-dir measured --output-dir outputs/minimax_h3_decode_validation
+```
+
+算子身份、shape 和调用次数精确核对；数值回归浮点容差为 `rel_tol=1e-10, abs_tol=1e-8`。当前公式、硬件假设和时延见 [模型说明](../../docs/minimax_h3.md)，本次检查结果见 [验证记录](../../docs/validation.md)。

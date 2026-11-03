@@ -73,7 +73,7 @@ FLOPs       = 2 × N                         # 每元素一次乘、一次加
 2. 按阶段搭建计算图。优先复用 `src/rooflang/language/kernels/`；缺少的公式按[算子扩展说明](operator_extension.md)实现。数据边描述真实张量依赖，控制边只约束顺序。并行部署需要显式表示每 rank 的工作量及通信，不能将所有全局统计简单除以卡数。
 3. 提供 `create_workflow(hardware, config) -> Workflow`，并在模型目录的 `__init__.py` 导出。阶段回调返回 `SimulationResult` 或 `StageResult`。通过 metadata 说明生效配置、统计范围、请求计数与未建模工作；跨阶段权重驻留/卸载与状态延续需要显式处理。
 4. 在 `src/rooflang/programs/models/__init__.py` 注册模型名。正式 CLI 通过注册表加载工作流；新模型参数优先放入 `--config`，无需为每个参数增加 CLI 选项。模型专属 CSV 字段在 `src/rooflang/runtime/export_config.py` 的 `MODEL_EXTENSIONS` 声明，模型提供取值。
-5. 加入小样本解析测试、配置拒绝测试和一次完整 CLI 测试；确认仿真仅使用安装包和显式配置，不读取权重或历史输出文件。再运行正式规模案例，并把配置、数据来源记录和可比较的参考结果一起提交。
+5. 加入小样本解析测试、配置拒绝测试和一次完整 CLI 测试；确认仿真仅使用安装包和显式配置，不读取权重或预计算输出文件。再运行正式规模案例，并把配置、数据来源记录和可比较的参考结果一起提交。
 
 注册后的命令形式为：
 
@@ -111,3 +111,5 @@ stage = StageResult([GraphResult("denoise_step", result, multiplier=20)])
 本仓库由通用 DSL、仿真器、算子、硬件与导出模块，以及 MAGI-2 Preview 和 MiniMax-H3 建模组成。模型案例聚焦多模态生成的性能仿真；公共算子用于模型接入和内部图校验。
 
 MAGI 的本地模型描述、公式和来源记录位于 `src/rooflang/programs/models/magi2_preview/`。当前支持 I2V/T2V、272p/540p/1080p、10 秒视频、batch=1、CP=EP∈{1,2,4,8}；540p/272p 没有精修阶段。CPU 文本前向仅统计算量和内存，未标定延迟；冷加载、后处理和封装未计时。其吞吐量是已建模加速器阶段的片段生成率，显存为解析工作集估计。详细口径见 [`magi2_preview.md`](magi2_preview.md)。
+
+MiniMax-H3 的接入示例还覆盖按单元区分的计算／访存效率、TND 文档边界、Qwen FIA tile、逐层权重预取，以及设备 trace 对齐的 decode 配方。分块模型必须分别记录数学工作量、执行工作量与关键核心调度；设备 trace 可用于结构验证，但仿真运行不能读取其时延来生成预测。当前完整流程需要 BF16／FP16／FP32 Cube 和 Vector 吞吐，参考 [MiniMax-H3 说明](minimax_h3.md)。

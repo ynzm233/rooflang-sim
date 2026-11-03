@@ -10,14 +10,14 @@
 
 安装当前仓库后执行：
 
-```bash
-python scripts/magi2_baseline.py
-python scripts/magi2_baseline.py --profile minimal
-pytest -q tests/test_magi2_reproducibility.py
+```powershell
+.\.venv\Scripts\python.exe scripts/magi2_baseline.py
+.\.venv\Scripts\python.exe scripts/magi2_baseline.py --profile minimal
+.\.venv\Scripts\python.exe -m pytest -q tests/test_magi2_reproducibility.py
 ```
 
 比较包含解析后的配置和 shape、架构指纹、逐图执行次数与时延、阶段算子数、加权 FLOPs/流量、阶段显存、CPU 工作量，以及每个算子的名称、shape、dtype、权重和工作量指纹。JSON 使用 Python 浮点的完整往返精度；浮点比较使用 `rel_tol=1e-10, abs_tol=1e-8`，整数和结构指纹精确比较。图重复次数只加权时间与工作量，不加权驻留权重和显存峰值。
 
 `total_execution_time_ms` 是已建模加速器阶段时间；CPU 文本编码、媒体前后处理未计时，不能视为实测端到端时延。显存是解析工作集近似，容量结论为暂定；这些限制随基线一起冻结。
 
-维护者只有在确认公式变化后才应使用 `--capture-dir <新目录>` 生成候选基线。该选项运行当前安装的实现，不会自动重写本目录；应先检查与冻结基线的差异及其原因，再决定是否建立新版本基线。
+维护者只有在确认公式变化后才应使用 `--capture-dir <新目录>` 生成候选基线。该选项运行当前安装的实现，不会自动重写本目录；应先检查与冻结基线的差异及其原因，再更新当前参考数据。

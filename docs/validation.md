@@ -1,52 +1,39 @@
-# 交付验收（2026-10-15）
+# 当前模型验证
 
-下表命令已换为 Windows PowerShell 等价写法；测试结果和耗时保留原验收记录，不代表已在 Windows 重新测试。
+核对日期：2026-11-03。以下结果来自当前仓库源码及本地 macOS `.venv`：Python 3.14.2、NetworkX 3.7。命令给出 Windows PowerShell 等价写法；没有据此声称已完成 Windows 或真实 NPU 验收。
 
-本记录对应当前 `rooflang-sim`：`A5_pr_server` 已采用官方 Ascend 950PR 规格，并明确保留必要的效率与通信仿真假设。运行环境为仓库 `.venv`，Python 3.14.2、NetworkX 3.7。
+## 已执行检查
 
-## 已执行的检查
+| 检查 | 本次结果 |
+|---|---|
+| `.\.venv\Scripts\python.exe -m pytest -q` | 707 passed，1 skipped；跳过可选绘图模块；12.29 秒 |
+| `.\.venv\Scripts\python.exe scripts/magi2_baseline.py` | I2V／T2V 默认配置均通过数值回归 |
+| MiniMax-H3 Ref2VA 单卡完整 CLI | 七阶段完成，`is_valid=true`，按随附主配置和当前 B3 预设运行 |
+| `.\.venv\Scripts\python.exe scripts/minimax_h3_decode_validation.py --output-dir outputs/minimax_h3_decode_validation` | Video／Audio 调用数分别为 459714／4590，与实测明细一致；误差详见 decode 文档 |
+| `.\.venv\Scripts\python.exe examples/toy_model.py --check` | 3 项独立形状、非法配置与重复记账检查通过 |
 
-| 检查 | 结果 |
-| --- | --- |
-| `.\.venv\Scripts\python.exe -m pytest -q` | 652 项通过，1 个可选绘图模块跳过，9.47 秒；覆盖核心、算子、通信、容量、阶段、导出和模型回归 |
-| `tests/test_a5_950pr.py` | 7 项通过：Cube/Vector 手算成本、FP8 不支持路径、十进制带宽、128 GB 容量边界、通信假设与快照 |
-| `.\.venv\Scripts\python.exe scripts/minimax_h3_baseline.py` | 历史硬件源复现通过：FL2VA 4288 行、Ref2VA 4282 行；6 份源配置 SHA-256 校验通过 |
-| 当前默认 CLI 两条 H3 完整工作流 | FL2VA、Ref2VA 均完成；默认阶段卸载下两者 `is_valid=true` |
-| 当前 CLI 导出 | `config.snapshot.json` 包含官方规格、来源、核查日期与仿真假设；容量和带宽采用十进制 |
-
-依赖约束见 `pyproject.toml` 和 `requirements.lock.txt`。当前包内 `.py/.json` 内容 SHA-256：
+本次运行记录的包内 `.py/.json` 内容 SHA-256：
 
 ```text
-ce86c4a70d8ca8d5166b211928362e27a19682aaeb35a450f9c2644ec2010b92
+1f792110bba4d65327a186f8bbb736a430f99684393684a08af33c241895e551
 ```
 
-该哈希由当前源码的 `provenance()` 计算；每次运行的 `provenance.json` 会重新计算，用于发现公式或默认配置漂移。
+每次运行由 `provenance()` 计算并导出哈希；它覆盖包内代码和配置，不包含本文。依赖约束见 `pyproject.toml` 和 `requirements.lock.txt`。
 
-## 当前默认运行结果
+## 当前运行结果
 
-| 工作流 | 主算子时延 ms | 硬件与工作负载 |
-| --- | ---: | --- |
-| MAGI I2V | 48356.312568154266 | B300 8 卡，1080p，Preview=100，Refiner=5 |
-| MAGI T2V | 46695.35382179358 | 同上 |
-| MiniMax-H3 FL2VA | 228193.52842317586 | 官方 950PR 规格＋仿真假设，4 卡 SP4，FP16，50 步 |
-| MiniMax-H3 Ref2VA | 685813.7461188152 | 同上，参考视频＋音频 profile |
+| 工作流 | 已建模时延 ms | 场景 |
+|---|---:|---|
+| MAGI I2V | 48356.312568154 | B300 8 卡、1080p、100 次 Preview／5 次 Refiner |
+| MAGI T2V | 46695.353821794 | 同上 |
+| MiniMax-H3 Ref2VA | 5447582.931051 | Ascend910B3 单卡、SP1、49 步、组件混合精度、逐层卸载 |
 
-H3 当前结果由修正后的原生仿真得到。`baselines/minimax_h3/` 中的源工程快照和逐算子 CSV 用于隔离的历史硬件复现，不作为当前默认参数的性能结果。浮点累加按声明容差比较，shape、图执行次数和身份结构按精确值核验。权重字节数来自静态配置；仓库不包含对应的 safetensors index 原件，未完成对权重索引的独立核验。
+H3 使用 `examples/minimax_h3_ref2va_910b_sp1.json`：Cube 计算／访存效率 0.8，Vector 计算／访存效率 0.6，未设置联合 DiT FIA 效率覆盖。每卡容量代理峰值为 13187512628 bytes；容量通过不等于真实框架可部署。阶段数值及完整命令见 [MiniMax-H3](minimax_h3.md#当前-ref2va-结果)。
 
-## 审查中修复的问题
+## 验证边界
 
-- 单阶段 H3 也包含该阶段 indexed 权重、持久张量和 activation proxy；不再以图权重替代完整阶段容量，也不声称整流程可行。
-- JSON 序列化失败先于任何报告发布，避免新 CSV 与旧配置快照混在一起；CLI 拒绝 NaN／Infinity。不同模型不能混用一个已有报告目录。
-- 包使用标准 `src` 布局，可安装到独立虚拟环境并从任意工作目录运行。
+算术、图依赖、精度、调用次数、容量记账和导出一致性由本地测试验证；这些结果不能证明真实 kernel 时延准确。decode 比对关闭逐层卸载，使用设备 kernel 时长之和，与完整流程的含搬运时间不同。
 
-时延是已建模主算子的估计，显存是明确标注的解析代理；MAGI CPU 未计时部分、H3 近似项和硬件参数单位详见两份模型说明。
+当前 Video decode 预测 17458.638510 ms，相对实测 kernel 总时间误差 -14.25%；Audio decode 预测 95.581845 ms，误差 -89.92%。不设通过阈值，音频时延仍显著低估。host_total、device_span 与 kernel_total 分别解释，不能相加或混为同一口径，详见 [decode 建模说明](minimax_h3_decode.md)。
 
-## A5 参数口径
-
-当前 `A5_pr_server` 采用 32 Cube／64 Vector 的 950PR 规格：Cube FP16／FP8 为
-432／865 TFLOPS，Vector FP16 为 54 TFLOPS，内存为十进制 128 GB／1600 GB/s。
-有效吞吐继续应用明确标注的仿真效率。删除未使用的 Vector FP8 数值，通信和部署限制
-保留为仿真假设，官方规格和假设分别随硬件快照导出。来源链接见
-[硬件规格与仿真假设](minimax_h3.md#硬件规格与仿真假设)。
-
-当前时延是修正参数后的原生仿真结果，不是重跑上游得到的新源基线，也不是实测性能。
+`A5_pr_server` 没有 decode 所需的 FP32 吞吐，不作为当前完整 H3 流程的运行预设。MAGI CPU、媒体前后处理及真实内存分配器等未计时／未建模部分，见各模型说明与 [输出参考](output_reference.md)。

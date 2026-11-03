@@ -6,7 +6,7 @@
 
 ## 1. 安装并运行
 
-要求 Python 3.11+，推荐使用验证环境对应的 Python 3.12。采用标准 Python 包布局，仓库目录名称不影响安装和导入。
+要求 Python 3.11+；本次验证环境使用 Python 3.14.2。采用标准 Python 包布局，仓库目录名称不影响安装和导入。
 
 以下命令使用 **Windows PowerShell**，请在项目根目录执行；安装示例中的桌面路径请按实际位置调整。直接调用虚拟环境的 Python，无需激活。多行命令使用反引号（`` ` ``）续行，反引号后不能有空格；不要使用 Bash 的反斜杠 `\` 续行。
 
@@ -31,19 +31,19 @@ py -3 -m venv .venv
 | 模型 | 工作流 | 默认硬件与部署 | 主要输入边界 |
 | --- | --- | --- | --- |
 | `magi2_preview` | `i2v`、`t2v` | B300 单节点 8 卡，CP=EP=8 | 10 秒，batch=1；272p／540p／1080p |
-| `minimax_h3` | `fl2va`、`ref2va` | A5_pr_server，4 卡，SP=4 | 默认 124 帧、768×1344、FP16、50 次 denoise |
+| `minimax_h3` | `fl2va`、`ref2va` | 本文使用 Ascend910B3 单卡、SP=1，需显式指定硬件和配置 | 随附 Ref2VA：124 帧、768×1344、组件混合精度、49 次 denoise |
 
-MiniMax-H3 的 `fl2va` 包含首帧／尾帧／首尾两帧条件；`ref2va` 支持参考图像／视频及可选音频。当前冻结的 Ref2VA profile 使用 124 帧参考视频与音轨。MAGI 的 B300/H200 预设可从 CLI 选择；MiniMax-H3 默认使用专用 A5 预设，其他硬件需明确校准 Cube／Vector 算力及通信参数。
+MiniMax-H3 的 `fl2va` 包含首帧／尾帧／首尾两帧条件；`ref2va` 支持参考图像／视频及可选音频。随附 Ref2VA 配置使用 124 帧参考视频、原音轨和独立语音。MAGI 的 B300/H200 预设可从 CLI 选择；MiniMax-H3 CLI 未指定硬件时选择 A5，但该预设缺少 decode 所需的 FP32 吞吐，完整流程请使用下述 B3 命令。
 
-910B3 单卡／双卡场景使用官方 Ref2VA 完整 prompt、参考视频原音轨与独立语音，处理后输入／输出均为 1344×768、124 帧、24 fps。两组采用 SP=1／2、49 次去噪、组件混合精度及逐层权重卸载（当前层＋预取 1 层，额外常驻层为 0）：
+910B3 单卡／双卡场景使用官方 Ref2VA 完整 prompt、参考视频原音轨与独立语音，处理后输入／输出均为 1344×768、124 帧、24 fps。单卡／双卡分别采用 SP=1／2、49 次去噪、组件混合精度及逐层权重卸载（当前层＋预取 1 层，额外常驻层为 0）：
 
 ```powershell
 .\.venv\Scripts\python.exe -m rooflang --model minimax_h3 --hardware Ascend910B3_1Card --config examples/minimax_h3_ref2va_910b_sp1.json --output-dir outputs/minimax_h3_ref2va_910b3_sp1
 ```
 
-`examples/` 仅保留上述 MiniMax-H3 SP1 主配置。双卡实验可复制该配置，将 `sp` 改为 `2`，并选择 `Ascend910B3_2Cards` 硬件；旧通用、FA 和无卸载示例配置已清理。
+`examples/` 仅保留上述 MiniMax-H3 SP1 主配置。双卡实验可复制该配置，将 `sp` 改为 `2`，并选择 `Ascend910B3_2Cards` 硬件。
 
-完整条件长度为 6915 rows，packed rows 为 82749。Host DMA 32 GB/s、HCCS 每方向 28 GB/s 等参数尚未实测校准，容量 proxy 不含 workspace；旧 910B 短 prompt／整阶段驻留结果不适用。来源、推导和限制见 [910B3 官方 Ref2VA 场景](docs/minimax_h3.md#910b3官方-ref2va-单卡与双卡)。
+完整条件长度为 6915 rows，packed rows 为 82749。Host DMA 32 GB/s、HCCS 每方向 28 GB/s 等参数尚未实测校准，容量 proxy 不含 workspace。当前 B3 的 Cube 计算／访存效率均为 0.8，Vector 计算／访存效率均为 0.6。Qwen 视觉／文本 FIA 独立建模，音频转置卷积使用相位分块成本模型。来源、推导和限制见 [910B3 官方 Ref2VA 场景](docs/minimax_h3.md#910b3官方-ref2va-单卡与双卡)。
 
 ## 2. 新模型接入前准备什么
 
@@ -100,24 +100,23 @@ MiniMax-H3 的 `fl2va` 包含首帧／尾帧／首尾两帧条件；`ref2va` 支
 
 ## 5. 结果复现与测试
 
-`baselines/` 保存各工作流的固定参考结果、配置、精度与比较方法。校验脚本运行当前模型，逐项比较 shape、图执行次数、算子成本、阶段时延和显存统计。H3 脚本使用隔离的历史硬件重放原工程基线，日常 CLI 使用修正后的官方 950PR 规格；旧基线的二进制内存口径只用于历史复现。运行与基线校验只需本仓库及已安装的 Python 依赖。完整验收记录见 [validation.md](docs/validation.md)。
+当前验收覆盖核心测试、MAGI 数值回归、MiniMax-H3 单卡完整流程和 decode 实测结构核对。验证结果与适用范围见 [validation.md](docs/validation.md)。
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest -q
 .\.venv\Scripts\python.exe scripts/magi2_baseline.py
-.\.venv\Scripts\python.exe scripts/minimax_h3_baseline.py
+.\.venv\Scripts\python.exe scripts/minimax_h3_decode_validation.py --output-dir outputs/minimax_h3_decode_validation
 ```
 
-未安装 `.[plot]` 时跳过可选绘图测试；执行全部测试请先安装 `.\.venv\Scripts\python.exe -m pip install -e '.[test,plot]'`。各次测试结果见验收记录。
+未安装 `.[plot]` 时跳过可选绘图测试；执行全部测试请先安装 `.\.venv\Scripts\python.exe -m pip install -e '.[test,plot]'`。
 
-| 模型／工作流 | 当前默认仿真时延（ms） | 口径 |
+| 模型／工作流 | 当前仿真时延（ms） | 口径 |
 | --- | ---: | --- |
-| MAGI I2V | 48356.312568154266 | B300 8 卡，1080p，Preview=100，Refiner=5 |
-| MAGI T2V | 46695.35382179358 | 同上 |
-| MiniMax-H3 FL2VA | 228193.52842317586 | 官方 950PR 规格＋仿真假设，4 卡 SP4，FP16，50 步 |
-| MiniMax-H3 Ref2VA | 685813.7461188152 | 同上，参考视频＋音频 profile |
+| MAGI I2V | 48356.312568154 | B300 8 卡，1080p，Preview=100，Refiner=5 |
+| MAGI T2V | 46695.353821794 | 同上 |
+| MiniMax-H3 Ref2VA | 5447582.931051 | Ascend910B3 单卡 SP1，随附主配置，49 步、逐层卸载 |
 
-以上都是**已建模部分的预测值，不是实测端到端时延**。MAGI 的 CPU 文本编码仅计 FLOPs／内存，未标定延迟；MiniMax-H3 对 ConvTranspose、GroupNorm、FlashAttention 访存和显存峰值采用近似建模；媒体处理等遗漏项、逐层卸载场景的显式搬运范围见 [MAGI 边界](docs/magi2_preview.md) 与 [MiniMax-H3 边界](docs/minimax_h3.md)。修改公式时，应新增带版本的基线，并记录变化原因和适用范围。
+以上均于 2026-11-03 用当前代码核对，是**已建模部分的预测值，不是实测端到端时延**。MAGI CPU 文本编码未标定延迟；MiniMax-H3 的 attention、音频转置卷积分块调度及显存均含解析近似。具体遗漏项见 [MAGI 边界](docs/magi2_preview.md) 与 [MiniMax-H3 边界](docs/minimax_h3.md)。公式或预设变化后，应重跑案例并更新文档中的当前数值。
 
 ## 6. 仓库结构与接口
 

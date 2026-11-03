@@ -86,6 +86,12 @@ def flops_by_dtype(self):
 
 聚合访存模型可用 `Tensor(..., storage_bytes=0)` 描述累计传输，但此张量不再计入物理内存分配。此时必须另外建立真实工作集/临时内存的容量口径，并在结果中标注近似。MAGI `bridge.py` 的 `AnalyticalKernel` 使用这条路径；普通新算子优先采用真实形状张量。
 
+### 模型专用的执行工作量与调度
+
+当前 H3 的 [Qwen FIA](../src/rooflang/programs/models/minimax_h3/qwen_fia.py) 分开保存数学有效 pair、执行矩形和 Cube 对齐工作；[音频转置卷积](../src/rooflang/programs/models/minimax_h3/transpose_tiling.py) 分开保存参考／有效／执行 FLOPs、关键核心波次与 tile 重读流量。新增分块模型也应保留这些边界，不能把 padding 或低利用率伪装成数学算量。
+
+`H3Kernel.scheduled_compute_time_us(device)` 可按关键核心工作量返回微秒，供仿真器计时；未提供专用时间时使用 `flops_by_dtype`。采用此接口后仍要验证导出的 `compute_ms` 与调度相符。`local_memory_efficiency` 只折减访存计时，真实流量及容量需单独保留。
+
 ## 4. 连接图、设备与通信
 
 ```python
