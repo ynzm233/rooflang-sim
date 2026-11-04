@@ -58,7 +58,7 @@ class BaseBlock:
     def _pre_build(self, strategy):
         # MAGI's source deployment uses the ordinary component-prefix tags.
         # Keep unclassified conditioning/resize/visual-encoder blocks at zero.
-        tags = {"llm": 3, "vit": 128, "dit": 256,
+        tags = {"vit": 128, "dit": 256,
                 "vae_decoder": 1024, "text_encoder": 2048}
         self.block_optag = next((mask for prefix, mask in tags.items()
                                 if self.component_type.startswith(prefix)), 0)

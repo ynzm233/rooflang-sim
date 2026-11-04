@@ -51,8 +51,6 @@ COMMON_PLAN_EXTENSIONS = (
     "workload operator_stage_csvs"
 ).split()
 
-LLM_MODELS = frozenset(("dsv4_pro", "dsv4_flash", "glm_5_2_fp8", "kimi_k3"))
-
 MAGI_OPERATOR_EXTENSIONS = (
     "module layer_idx block_id semantic assumption source_compute_dtype "
     "component rank_scope memory_model parent_node_name subcall subcall_index "
@@ -73,7 +71,6 @@ MAGI_PLAN_EXTENSIONS = (
 ).split()
 
 MODEL_EXTENSIONS = {
-    **{name: {"operator": (), "stage": (), "plan": ()} for name in LLM_MODELS},
     "magi2_preview": {
         "operator": MAGI_OPERATOR_EXTENSIONS,
         "stage": (),

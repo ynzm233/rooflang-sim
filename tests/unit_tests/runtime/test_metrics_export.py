@@ -294,9 +294,9 @@ def test_collective_participant_traces_are_exported_once(tmp_path):
         total_time_us=250, peak_memory={},
     )
 
-    export_metrics({"prefill": result}, tmp_path, model_name="toy")
+    export_metrics({"text_encode": result}, tmp_path, model_name="toy")
 
-    operator, = _rows(tmp_path / "prefill.csv")
+    operator, = _rows(tmp_path / "text_encode.csv")
     stage, = _rows(tmp_path / "stage_metrics.csv")
     assert operator["operator"] == "AllReduce"
     assert set(operator["device_names"].split("+")) == {"gpu0", "gpu1"}
@@ -350,12 +350,12 @@ def test_fractional_shapes_mixed_precision_and_unicode_roundtrip(tmp_path):
         total_time_us=1000, peak_memory={},
     )
 
-    export_metrics({"prefill": result}, tmp_path, model_name="测试模型",
+    export_metrics({"text_encode": result}, tmp_path, model_name="测试模型",
                    hardware_name="测试硬件",
                    metadata={"note": "引号\"、逗号,\n换行",
                              "compute_dtype": "bf16", "weight_storage_dtype": "fp8"})
 
-    operator, = _rows(tmp_path / "prefill.csv")
+    operator, = _rows(tmp_path / "text_encode.csv")
     plan, = _rows(tmp_path / "测试模型_plan_metrics.csv")
     assert set(operator["compute_dtype"].split("+")) == {"fp8", "fp4"}
     assert operator["model_name"] == "测试模型"
@@ -370,8 +370,8 @@ def test_fractional_shapes_mixed_precision_and_unicode_roundtrip(tmp_path):
 
 def test_plan_totals_and_throughput_include_preload(tmp_path):
     stages = {
-        "prefill": SimulationResult([], 3000, {}, measurement_start_us=1000),
-        "decode": SimulationResult([], 7000, {}, measurement_start_us=2000),
+        "text_encode": SimulationResult([], 3000, {}, measurement_start_us=1000),
+        "preview_denoise": SimulationResult([], 7000, {}, measurement_start_us=2000),
     }
 
     export_metrics(stages, tmp_path, model_name="toy",
@@ -412,7 +412,8 @@ def test_empty_stage_writes_headers_and_leaves_undefined_rates_blank(tmp_path, m
 
 @pytest.mark.parametrize(
     "model_name,stage_name,batch_size,prompt_len",
-    [("dsv4_flash", "prefill", 2, 32), ("kimi_k3", "decode_step", 8, 256)],
+    [("minimax_h3", "qwen_text_condition", 2, 32),
+     ("magi2_preview", "preview_denoise", 8, 256)],
 )
 def test_model_and_workload_metadata_drive_each_export(
         tmp_path, model_name, stage_name, batch_size, prompt_len):
@@ -453,22 +454,22 @@ def test_model_and_workload_metadata_drive_each_export(
     assert isinstance(metadata["workload"], dict)
 
 
-def test_registered_model_uses_shared_schema_without_other_model_fields(tmp_path):
+def test_magi_schema_keeps_declared_fields_and_omits_unrelated_metadata(tmp_path):
     export_metrics(
-        {"prefill": SimulationResult([], 1000, {})}, tmp_path,
-        model_name="dsv4_flash",
+        {"text_encode": SimulationResult([], 1000, {})}, tmp_path,
+        model_name="magi2_preview",
         metadata={"output_tokens": 0, "request_count": None,
-                  "dit_tokens": {"unexpected": object()}, "workflow": "i2v"},
+                  "unrelated": {"unexpected": object()}, "workflow": "i2v"},
     )
 
-    plan, = _rows(tmp_path / "dsv4_flash_plan_metrics.csv")
+    plan, = _rows(tmp_path / "magi2_preview_plan_metrics.csv")
     assert plan["export_schema_version"] == "2"
     assert plan["throughput"] == "0.0"
     assert plan["fail_reason"] == ""
     assert "request_per_second" not in plan
     assert "request_count" not in plan
-    assert "dit_tokens" not in plan
-    assert "workflow" not in plan
+    assert "unrelated" not in plan
+    assert plan["workflow"] == "i2v"
 
 
 def test_magi_config_projection_is_central_and_private_input_is_not_exported(tmp_path):
@@ -482,7 +483,7 @@ def test_magi_config_projection_is_central_and_private_input_is_not_exported(tmp
         model_name="magi2_preview", hardware_name="B300Cluster1Node",
         metadata={"_model_config": config,
                   "resolved_shape_summary": {"preview_padded_tokens": 4096},
-                  "max_ttft_ms": "", "target": ""},
+                  "unused_limit_ms": "", "target": ""},
     )
 
     plan, = _rows(tmp_path / "magi2_preview_plan_metrics.csv")
@@ -493,27 +494,27 @@ def test_magi_config_projection_is_central_and_private_input_is_not_exported(tmp
     assert plan["main_chip"] == "B300Cluster1Node"
     assert plan["main_cards"] == "8"
     assert "_model_config" not in plan
-    assert "max_ttft_ms" not in plan
+    assert "unused_limit_ms" not in plan
     assert "target" not in plan
     assert "throughput" not in plan
 
 
 def test_invalid_metadata_does_not_publish_partial_csvs(tmp_path):
-    previous = tmp_path / "prefill.csv"
+    previous = tmp_path / "text_encode.csv"
     previous.write_text("previous report\n", encoding="utf-8")
 
     with pytest.raises(TypeError):
         export_metrics(
-            {"prefill": SimulationResult([], 1000, {})}, tmp_path,
+            {"text_encode": SimulationResult([], 1000, {})}, tmp_path,
             model_name="toy", metadata={"bad": {"value": object()}},
         )
 
     assert previous.read_text(encoding="utf-8") == "previous report\n"
-    assert {path.name for path in tmp_path.iterdir()} == {"prefill.csv"}
+    assert {path.name for path in tmp_path.iterdir()} == {"text_encode.csv"}
 
 
 @pytest.mark.parametrize("model_name", [
-    "dsv4_pro", "dsv4_flash", "glm_5_2_fp8", "kimi_k3", "magi2_preview",
+    "magi2_preview", "minimax_h3",
 ])
 def test_common_optional_statistics_follow_available_data_for_every_model(tmp_path, model_name):
     kernel = SyntheticKernel(flops=12)

@@ -42,19 +42,19 @@ def test_python_entrypoint_uses_cli_default_path_and_exports_invalid_result(
 
 
 def test_python_entrypoint_honors_selected_stage_and_output_override(tmp_path):
-    workflow = Workflow({"prefill": _result, "decode": _result}, {})
+    workflow = Workflow({"text_encode": _result, "video_vae_decode": _result}, {})
     destination = tmp_path / "reports"
 
     results, output_dir = run_and_export(
-        workflow, model_name="text", hardware_name="H200",
-        stage="decode", output_dir=destination)
+        workflow, model_name="magi2_preview", hardware_name="H200",
+        stage="video_vae_decode", output_dir=destination)
 
-    assert list(results) == ["decode"]
+    assert list(results) == ["video_vae_decode"]
     assert output_dir == destination
     assert {path.name for path in destination.iterdir()} == {
-        "decode.csv", "stage_metrics.csv", "text_plan_metrics.csv",
+        "video_vae_decode.csv", "stage_metrics.csv", "magi2_preview_plan_metrics.csv",
         "summary.json", "config.snapshot.json", "provenance.json"}
-    assert _plan(destination / "text_plan_metrics.csv")["stages"] == "decode"
+    assert _plan(destination / "magi2_preview_plan_metrics.csv")["stages"] == "video_vae_decode"
 
 
 def test_python_entrypoint_does_not_export_failed_workflow(tmp_path):

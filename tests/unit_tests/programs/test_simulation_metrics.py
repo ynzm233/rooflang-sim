@@ -46,8 +46,8 @@ def _row(path):
 
 
 @pytest.mark.parametrize("model_name,stage_name,batch_size", [
-    ("configured_language_model", "prefill", 2),
-    ("configured_audio_model", "audio_decode", 5),
+    ("minimax_h3", "qwen_text_condition", 2),
+    ("magi2_preview", "audio_vae_decode", 5),
 ])
 def test_shared_simulation_exports_configured_model_and_stage(
         tmp_path, model_name, stage_name, batch_size):

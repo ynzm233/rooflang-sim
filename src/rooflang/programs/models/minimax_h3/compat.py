@@ -56,7 +56,7 @@ class BaseBlock:
         self.comp_config = SimpleNamespace(**{'tie_word_embeddings': False, **comp_config})
         self.nodes = []
     def _pre_build(self, strategy):
-        tags = {'llm': 3, 'vit': 128, 'dit': 256, 'vae_decoder': 1024, 'text_encoder': 2048}
+        tags = {'vit': 128, 'dit': 256, 'vae_decoder': 1024, 'text_encoder': 2048}
         self.block_optag = next((v for k,v in tags.items() if self.block_id.startswith(k)), 0)
 
 class BlockFactory:

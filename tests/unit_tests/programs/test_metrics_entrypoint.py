@@ -1,13 +1,16 @@
 """CLI integration preserves model config and reproducible reports."""
 import csv
 import json
+from pkgutil import iter_modules
 from types import SimpleNamespace
 import pytest
 from rooflang.language.hardware.component import Compute
 from rooflang.language.kernels.forward import Nop
 from rooflang.programs.experiments import main as main_module
 from rooflang.programs.experiments.workflow import Workflow
+from rooflang.programs import models
 from rooflang.programs.presets.b300 import B300SuperChip
+from rooflang.runtime.export_config import MODEL_EXTENSIONS
 from rooflang.runtime.simulator import Bound, SimulationResult, TraceEntry
 from rooflang.runtime.stages import GraphResult, StageResult
 
@@ -15,6 +18,27 @@ from rooflang.runtime.stages import GraphResult, StageResult
 def _rows(path):
     with path.open(newline="", encoding="utf-8") as file:
         return list(csv.DictReader(file))
+
+
+def test_model_packages_and_export_declarations_match_supported_scope():
+    supported = {"magi2_preview", "minimax_h3"}
+    assert set(models.MODEL_NAMES) == supported
+    assert set(main_module.MODEL_NAMES) == supported
+    assert {module.name for module in iter_modules(models.__path__)} == supported
+    assert set(MODEL_EXTENSIONS) <= supported
+    for name in supported:
+        assert callable(models.load_model(name).create_workflow)
+
+
+def test_unsupported_model_is_rejected_before_creating_reports(tmp_path, capsys):
+    output = tmp_path / "reports"
+    with pytest.raises(ValueError, match="Unknown model"):
+        models.load_model("unsupported_model")
+    with pytest.raises(SystemExit) as error:
+        main_module.main(["--model", "unsupported_model", "--output-dir", str(output)])
+    assert error.value.code == 2
+    assert "invalid choice" in capsys.readouterr().err
+    assert not output.exists()
 
 
 @pytest.mark.parametrize("selected", [None, "image_vae_encode"])

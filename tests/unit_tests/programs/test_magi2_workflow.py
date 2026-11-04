@@ -72,7 +72,7 @@ def test_native_workflow_exports_actual_semantic_stages_and_reconciles_csv(
     assert len(applicable_source_fields) == 41
     assert set(applicable_source_fields) <= plan.keys()
     assert plan["export_schema_version"] == "2"
-    assert {"max_ttft_ms", "target", "throughput"}.isdisjoint(plan)
+    assert {"unused_limit_ms", "target", "throughput"}.isdisjoint(plan)
     shape = json.loads(plan["resolved_shape_summary"])
     assert plan["dit_tokens"] == str(shape["preview_padded_tokens"])
     assert plan["condition_type"] == workflow_name

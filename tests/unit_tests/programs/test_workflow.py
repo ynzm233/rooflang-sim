@@ -56,8 +56,8 @@ def test_explicit_stage_only_runs_selected_callback_and_summarizes_results():
 def test_unknown_explicit_stage_reports_available_names_without_running_callbacks():
     calls = []
     workflow = Workflow({"text_encode": lambda: calls.append("executed")}, metadata={})
-    with pytest.raises(ValueError, match="Unknown stage 'prefill'; available: text_encode"):
-        workflow.run("prefill")
+    with pytest.raises(ValueError, match="Unknown stage 'missing_stage'; available: text_encode"):
+        workflow.run("missing_stage")
     assert calls == []
 
 

@@ -50,7 +50,7 @@ def _read(path):
         return reader.fieldnames, list(reader)
 
 
-@pytest.mark.parametrize("model_name", ["magi2_preview", "dsv4_pro"])
+@pytest.mark.parametrize("model_name", ["magi2_preview", "minimax_h3"])
 @pytest.mark.parametrize("compute,memory,expected", [
     (2, 1, (0.002, 0)),
     (1, 2, (0, 0.002)),
@@ -73,7 +73,7 @@ def test_roofline_attribution_uses_dominant_ideal_component(
 
 def test_overlap_attribution_does_not_absorb_resource_contention(tmp_path):
     result = _simulate(2, 1, parallel=True)
-    export_metrics({"forward": result}, tmp_path, model_name="dsv4_pro")
+    export_metrics({"forward": result}, tmp_path, model_name="minimax_h3")
 
     _, rows = _read(tmp_path / "forward.csv")
     assert result.total_time_us == pytest.approx(4)
@@ -121,7 +121,7 @@ def test_communication_and_unmodeled_cpu_leave_overlap_cells_blank(tmp_path):
     assert rows[-1]["execution_time_ms"] == ""
 
 
-@pytest.mark.parametrize("model_name", ["magi2_preview", "dsv4_pro"])
+@pytest.mark.parametrize("model_name", ["magi2_preview", "minimax_h3"])
 def test_optional_timing_fields_require_supplied_values(model_name):
     fields = ("overlapped_compute_ms", "overlapped_memory_ms")
     absent = csv_fields("operator", model_name, [dict.fromkeys(fields)])
