@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import Any, Mapping, TypedDict
 import json
 
+from rooflang.runtime.efficiency import resolve_efficiency
+
 
 CONFIG_DIR = Path(__file__).resolve().parent
 # Ported from Markov_Infer_Sim; architecture/workload YAML converted to JSON.
@@ -178,11 +180,15 @@ class Magi2Config:
     moe_active_experts_per_head: int = 256
     moe_compute_amplification: float = 1.0
     attention_softmax_compute_multiplier: float = 1.0
+    efficiency: dict[str, Any] = field(default_factory=dict)
     precision_proxy: dict[str, float] = field(default_factory=lambda: {
         "bf16_from_fp16": 1.0, "fp32_from_fp16": 0.5,
     })
     dit_tokens: int = 0
     _architecture: dict[str, dict[str, Any]] = field(default_factory=dict, init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        self.efficiency = resolve_efficiency(self.efficiency)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "Magi2Config":

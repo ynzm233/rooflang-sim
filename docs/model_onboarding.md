@@ -69,6 +69,9 @@ FLOPs       = 2 × N                         # 每元素一次乘、一次加
 
 ## 3. 把真实模型接到相同接口
 
+所有新模型都要支持公共 `efficiency` 配置，不应自行从硬件名称选系数，也不应复制独立的校验规则。用 `resolve_efficiency()` 解析，再用 `prepare_hardware()` 在首次估时前创建本次硬件副本；所有阶段使用该副本，并将它存入 `Workflow.hardware`。算力必须保留单元与峰值口径，访存采用 `apply_memory_efficiency()` 或原生核的显式等价接线。`toy_model.py` 已演示这一流程，完整规则与验证清单见 [模型效率配置](efficiency.md#新模型接入与审计)。
+
+
 1. 在 `src/rooflang/programs/models/new_model/` 实现配置读取和校验。未知字段、非整数/负数维度、不支持的工作流、不能整除的分片和设备不足应显式报错。推导并保存解析后的形状，避免在多个模块各自计算。
 2. 按阶段搭建计算图。优先复用 `src/rooflang/language/kernels/`；缺少的公式按[算子扩展说明](operator_extension.md)实现。数据边描述真实张量依赖，控制边只约束顺序。并行部署需要显式表示每 rank 的工作量及通信，不能将所有全局统计简单除以卡数。
 3. 提供 `create_workflow(hardware, config) -> Workflow`，并在模型目录的 `__init__.py` 导出。阶段回调返回 `SimulationResult` 或 `StageResult`。通过 metadata 说明生效配置、统计范围、请求计数与未建模工作；跨阶段权重驻留/卸载与状态延续需要显式处理。

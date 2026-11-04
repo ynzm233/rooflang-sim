@@ -27,14 +27,10 @@ OFFICIAL_SPEC = {
 # In particular, 2016 GB/s is the chip's aggregate bidirectional UB bandwidth;
 # it does not establish a per-peer link or collective bandwidth for this server.
 SIMULATION_ASSUMPTIONS = {
-    'cube_efficiency': 0.7,
-    'vector_efficiency': 0.6,
     'memory_efficiency': 0.8,
     'max_devices_per_node': 8,
     'intra_node_bandwidth_gbs': 392.0,
-    'intra_node_efficiency': 0.7,
     'intra_node_latency_us': 1.0,
-    'collective_efficiencies': {2: 0.142857, 4: 0.428571, 8: 1.0},
 }
 
 
@@ -52,9 +48,9 @@ class A5PRServer(HardwareGraph):
         assumptions = self.metadata['simulation_assumptions']
         tflops = {}
         for dtype, peak in spec['cube_tflops'].items():
-            tflops[dtype] = tflops[f'{dtype}:cube'] = peak * assumptions['cube_efficiency']
+            tflops[dtype] = tflops[f'{dtype}:cube'] = peak
         for dtype, peak in spec['vector_tflops'].items():
-            tflops[f'{dtype}:vector'] = peak * assumptions['vector_efficiency']
+            tflops[f'{dtype}:vector'] = peak
         gpus = []
         for i in range(n_devices):
             gpu = Compute(name=f'a5-{i}', kind='gpu', tflops=tflops.copy())
@@ -64,7 +60,7 @@ class A5PRServer(HardwareGraph):
             self.add_edge(FabricEdge(name='hbm', src=gpu, dst=memory,
                 src_to_dst_bandwidth_gbs=bw, dst_to_src_bandwidth_gbs=bw,
                 is_full_duplex=False))
-        network_bw = assumptions['intra_node_bandwidth_gbs'] * assumptions['intra_node_efficiency']
+        network_bw = assumptions['intra_node_bandwidth_gbs']
         for i, src in enumerate(gpus):
             for dst in gpus[i+1:]:
                 self.add_edge(FabricEdge(name='intra-node', src=src, dst=dst,
@@ -72,9 +68,4 @@ class A5PRServer(HardwareGraph):
                     is_full_duplex=True, alpha_us=assumptions['intra_node_latency_us']))
 
     def find_aggregate_bandwidth(self, devices):
-        assumptions = self.metadata['simulation_assumptions']
-        efficiencies = assumptions['collective_efficiencies']
-        n = len(devices)
-        key = min(efficiencies, key=lambda k: abs(k-n))
-        return (assumptions['intra_node_bandwidth_gbs'] * assumptions['intra_node_efficiency']
-                * efficiencies[key])
+        return self.metadata['simulation_assumptions']['intra_node_bandwidth_gbs']

@@ -132,3 +132,7 @@ result = simulate(graph, placement, hardware)
 ```
 
 pytest 需要按 README 安装开发依赖。模型专属算子还应运行相应模型测试以及一组完整工作流输出检查。
+
+## 模型效率接入
+
+新算子与新模型沿用[公共效率接口](efficiency.md#新模型接入与审计)。计时用的 `fp16:cube` / `fp16:vector` 是计算单元键，导出的 `compute_dtype` 仍应填写 `fp16` 等实际精度；需要分单元核查时读取 `flops_by_dtype` 和有效吞吐元数据。有明确单元流量拆分时按字节加权；没有拆分的 mixed 算子整体归 Cube，不按 FLOPs 比例拆字节。效率不得改变张量物理流量或容量。

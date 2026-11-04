@@ -11,19 +11,18 @@ from rooflang.language.tensor import Tensor
 from rooflang.programs.experiments import main as main_module
 from rooflang.programs.models.minimax_h3.bridge import H3Collective
 from rooflang.programs.models.minimax_h3.workflow import create_workflow
-from rooflang.programs.presets.ascend910b import Ascend910B, Ascend910B3, SIMULATION_ASSUMPTIONS
+from rooflang.programs.presets.ascend910b import Ascend910B, Ascend910B3
+from rooflang.runtime.efficiency import prepare_hardware, resolve_efficiency
 from rooflang.runtime.reproducibility import config_snapshot
 from rooflang.runtime.simulator import OOMError, Simulator
 
 
 @pytest.fixture
-def hardware_efficiencies(monkeypatch):
-    for name, value in {
+def hardware_efficiencies():
+    return resolve_efficiency({
         "cube_efficiency": 0.8, "vector_efficiency": 0.6,
         "cube_memory_efficiency": 0.8, "vector_memory_efficiency": 0.6,
-        "memory_efficiency": 1.0,
-    }.items():
-        monkeypatch.setitem(SIMULATION_ASSUMPTIONS, name, value)
+    })
 
 
 class ComputeSegments(Kernel):
@@ -55,7 +54,8 @@ def run_single(hardware, kernel):
     ({"fp32:cube": 73_728_000, "fp32:vector": 18_432_000}, 55 / 12),
 ])
 def test_cube_and_vector_peaks_drive_separate_costs(segments, expected_us, hardware_efficiencies):
-    result = run_single(Ascend910B(), ComputeSegments(segments))
+    hardware = prepare_hardware(Ascend910B(), hardware_efficiencies)
+    result = run_single(hardware, ComputeSegments(segments))
     # Cube takes 1 / 0.8 us; Vector takes 2 / 0.6 us, totaling 55 / 12 us.
     assert result.total_time_us == pytest.approx(expected_us)
     with pytest.raises(ValueError, match="no compute for dtype 'fp8:cube'"):
@@ -83,7 +83,7 @@ def test_hbm_bandwidth_and_physical_capacity_units():
     (0.8, 3.75), (0.6, 5.0), (0.3, 10.0),
 ])
 def test_local_memory_efficiency_changes_time_without_inflating_bytes(
-    efficiency, expected_us, hardware_efficiencies,
+    efficiency, expected_us,
 ):
     hardware = Ascend910B3()
     kernel = ComputeSegments(inputs={"x": Tensor("fp16", (800_000,))},
@@ -164,7 +164,7 @@ def test_host_transfer_uses_host_link_and_keeps_hbm_local(direction, memory_effi
 
 
 def test_dma_prefetch_overlaps_independent_npu_compute(hardware_efficiencies):
-    hardware = Ascend910B3()
+    hardware = prepare_hardware(Ascend910B3(), hardware_efficiencies)
     host_tensor = Tensor("fp16", (160_000,))
     copy = ComputeSegments(inputs={"source": host_tensor},
                            outputs={"destination": Tensor("fp16", (160_000,))})
@@ -212,7 +212,7 @@ def test_cli_selects_matching_hardware_and_h3_sequence_parallelism(
 
 
 def test_snapshot_preserves_sources_and_uncalibrated_capacity_assumptions(hardware_efficiencies):
-    hardware = Ascend910B(2)
+    hardware = prepare_hardware(Ascend910B(2), hardware_efficiencies)
     snapshot = config_snapshot(
         SimpleNamespace(metadata={}), model_name="minimax_h3",
         hardware_name="Ascend910B3_2Cards", stage=None, config={}, hardware=hardware,
@@ -224,17 +224,15 @@ def test_snapshot_preserves_sources_and_uncalibrated_capacity_assumptions(hardwa
     assert saved["derived_specification"]["vector_tflops"]["fp16"] == 18.432
     assert Ascend910B is Ascend910B3
     assumptions = saved["simulation_assumptions"]
-    assert assumptions["cube_efficiency"] == 0.8
-    assert assumptions["vector_efficiency"] == 0.6
-    assert assumptions["cube_memory_efficiency"] == 0.8
-    assert assumptions["vector_memory_efficiency"] == 0.6
+    assert not set(hardware_efficiencies) & assumptions.keys()
+    assert saved["efficiency"] == hardware_efficiencies
     assert assumptions["memory_efficiency"] == 1.0
     assert assumptions["memory_capacity_gb"] == 68.719476736
     assert assumptions["driver_runtime_reserved_bytes"] == 0
     assert assumptions["intra_node_bandwidth_gbs"] == 28.0
     assert assumptions["host_bandwidth_gbs_per_device_per_direction"] == 32.0
     assert not assumptions["host_shared_bandwidth_contention_modeled"]
-    assert "uncalibrated" in assumptions["calibration"]
+    assert "no measured latency calibration" in assumptions["calibration"]
     assumptions["memory_capacity_source_urls"].clear()
     assert hardware.metadata["simulation_assumptions"]["memory_capacity_source_urls"]
     for invalid in (True, 0, 3, 1.0):

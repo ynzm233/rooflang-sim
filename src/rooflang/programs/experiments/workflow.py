@@ -6,6 +6,7 @@
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from rooflang.language.graph import HardwareGraph
 from rooflang.runtime.simulator import SimulationResult
 from rooflang.runtime.stages import StageResult
 
@@ -15,6 +16,7 @@ class Workflow:
     stages: dict[str, Callable[[], SimulationResult | StageResult]]
     metadata: dict
     summarize: Callable[[dict], dict] | None = None
+    hardware: HardwareGraph | None = None
 
     def run(self, selected="all"):
         names = list(self.stages) if selected == "all" else [selected]

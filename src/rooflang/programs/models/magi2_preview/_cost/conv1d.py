@@ -23,6 +23,11 @@ class Conv1dParams(OperatorParams):
     has_bias: bool = field(default=False, metadata={"desc": "是否计入输出偏置"})
     cal_kv_cache: bool = field(default=False, metadata={"desc": "是否计算KV缓存"})
 
+    def validate(self):
+        super().validate()
+        if self.c_in % self.group or self.c_out % self.group:
+            raise ValueError("Conv1d channels must be divisible by group")
+
 
 @Registry.register_operator("conv1d", op_type=OpType.COMPUTE)
 class Conv1dOperator(Operator):
@@ -48,6 +53,8 @@ class Conv1dOperator(Operator):
         self.cal_kv_cache = params.cal_kv_cache if params is not None else kwargs.get("cal_kv_cache", False)
 
         self.L_out = (self.L_in + 2 * self.pad - self.dilation * (self.kernel_size - 1) - 1) // self.stride + 1
+        if self.L_out <= 0:
+            raise ValueError("Conv1d output length must be positive")
         self._input_elements = self.batch * self.c_in * self.L_in
         self._output_elements = self.batch * self.c_out * self.L_out
         self._weight_elements = (self.c_in // self.group) * self.c_out * self.kernel_size

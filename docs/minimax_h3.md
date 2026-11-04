@@ -114,13 +114,13 @@ F_V = H × [15 × P_exec + (2 × D + 14) × U]
 T_mem = B_C / (1600×10^9×η_C) + B_V / (1600×10^9×η_V)
 ```
 
-`T_mem` 单位秒，`B_C/B_V` 为按计算单元归属的物理流量字节，1600×10⁹ 是 B3 HBM 峰值 bytes/s，`η_C=0.8`、`η_V=0.6` 是当前 Cube／Vector 访存效率。计算时间将 Cube、FP32 Vector 两项串行相加，再与访存取 Roofline 最大值。
+`T_mem` 单位秒，`B_C/B_V` 为按计算单元归属的物理流量字节，1600×10⁹ 是 B3 HBM 峰值 bytes/s，`η_C=0.8`、`η_V=0.6` 是随附模型配置中的 Cube／Vector 访存效率。计算时间将 Cube、FP32 Vector 两项串行相加，再与访存取 Roofline 最大值。
 
-`transformer_fia_compute_efficiency` 可覆盖联合 DiT 的 FIA Cube／Vector 计算效率，取值须在 `(0,1]`。主配置未设置此项，使用硬件预设；覆盖不作用于 Qwen、text refiner、decode、访存或 DMA。实际生效值和作用范围随输出元数据保存。
+`transformer_fia_compute_efficiency` 可覆盖联合 DiT 的 FIA Cube／Vector 计算效率，取值须在 `(0,1]`。主配置未设置此项，使用模型 `efficiency` 中的通用算力系数；覆盖不作用于 Qwen、text refiner、decode、访存或 DMA。实际生效值和作用范围随输出元数据保存。
 
 ### B3 参数与未校准假设
 
-生效参数位于 [ascend910b.py](../src/rooflang/programs/presets/ascend910b.py)。下表按当前预设计算；峰值推导、来源和假设写入 `config.snapshot.json` 的 `hardware.metadata`。
+硬件物理参数位于 [ascend910b.py](../src/rooflang/programs/presets/ascend910b.py)，效率位于 [模型示例](../examples/minimax_h3_ref2va_910b_sp1.json) 的 `efficiency`。下表按该示例计算；省略效率时迁移字段均为 `1.0`，详见 [效率配置](efficiency.md)。峰值推导、来源和生效参数写入 `config.snapshot.json` 的 `hardware.metadata`。
 
 | 资源 | 峰值／物理值 | 当前效率／有效值 |
 |---|---:|---:|
@@ -165,9 +165,9 @@ Host RAM 为 1.5 TiB，Host↔NPU 每卡每方向 32 GB/s，双卡 HCCS 每方�
 
 ## 硬件规格与仿真假设
 
-`A5_pr_server` 的生效参数在 `src/rooflang/programs/models/minimax_h3/hardware.py`。选用 Ascend 950PR 的 32 Cube／64 Vector、128 GB 规格，来源为[昇腾官方处理器页](https://www.hiascend.com/hardware/processor)及其[《昇腾950 NPU架构白皮书》表3-1，PDF第13–15页](https://public-download.obs.cn-east-2.myhuaweicloud.com/ascend/%E6%98%87%E8%85%BE950%20NPU%E6%9E%B6%E6%9E%84%E7%99%BD%E7%9A%AE%E4%B9%A6.pdf#page=13)，核查日期为 2026-10-15。
+`A5_pr_server` 的硬件物理参数与全局 HBM 假设在 `src/rooflang/programs/models/minimax_h3/hardware.py`。选用 Ascend 950PR 的 32 Cube／64 Vector、128 GB 规格，来源为[昇腾官方处理器页](https://www.hiascend.com/hardware/processor)及其[《昇腾950 NPU架构白皮书》表3-1，PDF第13–15页](https://public-download.obs.cn-east-2.myhuaweicloud.com/ascend/%E6%98%87%E8%85%BE950%20NPU%E6%9E%B6%E6%9E%84%E7%99%BD%E7%9A%AE%E4%B9%A6.pdf#page=13)，核查日期为 2026-10-15。
 
-| 参数 | 官方峰值 | 仿真有效值 |
+| 参数 | 官方峰值 | 显式填写历史模型效率后的有效值 |
 |---|---:|---:|
 | Cube FP16 | 432 TFLOPS | 302.4 TFLOPS（×0.7） |
 | Cube FP8 | 865 TFLOPS | 605.5 TFLOPS（×0.7） |
@@ -177,11 +177,11 @@ Host RAM 为 1.5 TiB，Host↔NPU 每卡每方向 32 GB/s，双卡 HCCS 每方�
 
 486 TFLOPS 是该 PR 规格的 Cube+Vector FP16 总算力，不能作为 Cube 单元峰值。内存容量和带宽统一按十进制计算。
 
-以下值缺少对应的官方依据，但会影响仿真，保留在 `SIMULATION_ASSUMPTIONS` 中：
+以下参数是未校准的仿真假设：
 
-- Cube／Vector／内存效率为 0.7／0.6／0.8。
-- 单节点最多 8 卡；节点内以对称全双工逻辑边建模，带宽参数为每方向 392 GB/s，效率 0.7，延迟 1 μs。
-- 集合通信按 2／4／8 卡使用 0.142857／0.428571／1 的带宽系数；其他卡数沿用最近档位。它们描述源模型的聚合通信近似，没有实测校准依据。
+- 硬件 `SIMULATION_ASSUMPTIONS` 保留全局 HBM 效率 `0.8`、单节点最多 8 卡、节点内每方向 `392 GB/s` 对称全双工逻辑带宽和 `1 μs` 延迟。
+- 旧 Cube/Vector 算力效率 `0.7/0.6`、节点内通信效率 `0.7` 迁移为模型参数；未传时分别为 `1.0`。
+- 旧集合通信表 `{2: 0.142857, 4: 0.428571, 8: 1.0}` 不再隐含在硬件中。显式填写后仍按最近参与卡数取值，等距按配置顺序；省略表时统一为 `1.0`。完整复现片段见 [旧配置迁移](efficiency.md#从旧配置迁移)。
 
 官方的 2016 GB/s 是芯片 UB 双向总带宽，不能直接替换这里的服务器逻辑边或集合通信带宽。以上假设并非官方规格或实测结果。它们与官方峰值、来源 URL、所选规格一起导出到 `config.snapshot.json` 的 `hardware.metadata`，可追踪有效吞吐的计算依据。
 
@@ -192,7 +192,7 @@ A5 未提供 BF16 和 FP32 Cube／Vector 吞吐，不能运行本文的混合精
 ## 近似与局限
 
 - Qwen tile、FIA 和音频转置卷积是解析候选实现；Cube／Vector 的真实流水重叠、缓存和 kernel 效率尚未校准。通用 FA 与 FIA 的边界流量不代表完整实测 HBM 流量。
-- Video／Audio decode 的类型、形状和调用次数与提供的设备明细核对，成本仍由公式计算。当前误差及音频分块模型见 [decode 建模说明](minimax_h3_decode.md)。
+- Video／Audio decode 的类型、形状和调用次数与提供的设备明细核对，成本仍由公式计算；结构一致不代表时延已通过实测校准。
 - Video-VAE encoder 的 norm、Qwen patch embed 与容量仍有近似；部分组件内部的 cast／融合行为未逐核对齐。
 - `execution_time_ms` 不包含完整媒体处理、conditioning projection、CPU 调度、kernel launch 固定开销、scheduler、封装与 mux。统计范围是各阶段关键 rank，不能乘卡数解释成全局工作量。
 - 结构、算术与本地测试通过不等于 NPU 时延验收；缺失的实测项保持未知，不设置未经授权的误差通过阈值。

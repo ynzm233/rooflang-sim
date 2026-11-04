@@ -11,7 +11,9 @@ devices are inferred from the memory placement of their input/output tensors.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
+from numbers import Real
 from typing import TYPE_CHECKING, Dict, FrozenSet, List, Optional
 
 from rooflang.language.graph import HardwareGraph
@@ -66,9 +68,10 @@ class Placement:
     def set_kernel_device(self, kernel: Kernel, device: Compute,
                           stream: int = 0, resource_cap: float = 1.0) -> None:
         """Assign a kernel to a device/stream and auto-assign tensor memory."""
-        if resource_cap <= 0.0 or resource_cap > 1.0:
+        if (isinstance(resource_cap, bool) or not isinstance(resource_cap, Real)
+                or not math.isfinite(resource_cap) or not 0.0 < resource_cap <= 1.0):
             raise ValueError(
-                f"resource_cap must be in (0, 1], got {resource_cap}")
+                f"resource_cap must be in (0, 1] and finite, got {resource_cap}")
         self._mapping[kernel] = DeviceAssignment(device, stream, resource_cap)
         if self._hardware is None:
             return

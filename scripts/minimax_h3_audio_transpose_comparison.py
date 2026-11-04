@@ -1,7 +1,8 @@
 """Reproduce the report's audio scenario with uncalibrated transpose tiling.
 
 Prediction finishes before any baseline or measured latency is loaded. Old
-artifacts are read-only; output must be a new directory. No preset is modified.
+artifacts are read-only; their identity is checked before prediction. Supply the
+original pre-tiling baseline and its manifest. No preset is modified.
 """
 import argparse
 from collections import defaultdict
@@ -16,9 +17,9 @@ from rooflang.programs.models.minimax_h3.bridge import build_component
 from rooflang.programs.presets.ascend910b import Ascend910B3
 from rooflang.runtime.metrics_export import export_metrics
 from rooflang.runtime.simulator import Simulator
+from rooflang.runtime.efficiency import prepare_hardware, resolve_efficiency
 
 ROOT = Path(__file__).resolve().parents[1]
-BASELINE = ROOT / 'outputs/minimax_h3_ref2va_910b3_sp1_fia_compute065_mem060_experiment'
 
 
 def rows(path):
@@ -47,29 +48,40 @@ def signature(shape, measured=False):
     return tuple(sorted(inputs)), tuple(outputs)
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output-dir', type=Path, required=True)
-    args = parser.parse_args()
+    parser.add_argument('--baseline-dir', type=Path, required=True,
+                        help='Original pre-tiling report directory containing audio_vae_decode.csv')
+    parser.add_argument('--manifest', type=Path, required=True,
+                        help='Original report manifest with the baseline audio CSV SHA256')
+    parser.add_argument('--measured-dir', type=Path, default=ROOT / 'measured')
+    args = parser.parse_args(argv)
     output = args.output_dir.resolve()
     if output.exists():
         parser.error('output directory must be new; existing artifacts are preserved')
+    baseline_path = args.baseline_dir.resolve() / 'audio_vae_decode.csv'
+    manifest_path = args.manifest.resolve()
+    measured_path = args.measured_dir.resolve() / 'audio_vae_decode.csv'
+    stage_path = args.measured_dir.resolve() / 'stage_summary.csv'
+    for path in (baseline_path, manifest_path, measured_path, stage_path):
+        if not path.is_file():
+            parser.error(f'missing input file: {path}')
+    try:
+        report_manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+        expected_hash = report_manifest['source_sha256'][baseline_path.name]
+        baseline_hash = sha256(baseline_path)
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        parser.error(f'cannot validate baseline against {manifest_path}: {error}')
+    if baseline_hash != expected_hash:
+        parser.error(f'baseline SHA256 does not match {manifest_path}: {baseline_path}')
 
-    # Original report configuration, not today's 0.70 compute preset default.
-    hardware = Ascend910B3(1)
-    assumptions = hardware.metadata['simulation_assumptions']
-    assumptions.update(cube_efficiency=0.65, vector_efficiency=0.65,
-                       cube_memory_efficiency=0.60, vector_memory_efficiency=0.60,
-                       calibration='Fixed report configuration: Cube/Vector compute 0.65, '
-                                   'Cube/Vector HBM 0.60; communication/DMA unchanged. '
-                                   'Generic transpose algorithm is uncalibrated.')
-    for device in hardware.nodes:
-        if getattr(device, 'kind', '') != 'gpu':
-            continue
-        for dtype, peak in hardware.metadata['derived_specification']['cube_tflops'].items():
-            device.tflops[dtype] = device.tflops[f'{dtype}:cube'] = peak * 0.65
-        for dtype, peak in hardware.metadata['derived_specification']['vector_tflops'].items():
-            device.tflops[f'{dtype}:vector'] = peak * 0.65
+    # Preserve the original report coefficients explicitly at the model boundary.
+    efficiency = resolve_efficiency({
+        'cube_efficiency': 0.65, 'vector_efficiency': 0.65,
+        'cube_memory_efficiency': 0.60, 'vector_memory_efficiency': 0.60,
+    })
+    hardware = prepare_hardware(Ascend910B3(1), efficiency)
     mm = {'target_audio_latents_per_channel': 207, 'execution_profile': 'sglang_v0_5_21'}
     graph, placement = build_component('audio_vae_decoder', {}, mm, 207, hardware)
     result = Simulator(graph, placement, hardware).run()
@@ -77,12 +89,8 @@ def main():
                    hardware_name='Ascend910B3', metadata={'scope': 'audio_only_fixed_report_configuration'})
 
     # Evaluation only: these files cannot influence the prediction above.
-    report_manifest = json.loads((ROOT / 'reports/manifest.json').read_text())
-    baseline_path = BASELINE / 'audio_vae_decode.csv'
-    assert sha256(baseline_path) == report_manifest['source_sha256'][baseline_path.name]
     baseline, predicted = rows(baseline_path), rows(output / 'audio_vae_decode.csv')
     assert len(baseline) == len(predicted) == len(result.trace) == 4590
-    measured_path = ROOT / 'measured/audio_vae_decode.csv'
     measured = defaultdict(lambda: {'calls': 0, 'total_ms': 0.0})
     for row in rows(measured_path):
         if row['op_type'] == 'Conv2DTranspose':
@@ -136,7 +144,6 @@ def main():
         assert item['calls'] == measured[key]['calls']
         item['measured_ms'] = measured[key]['total_ms']
         item['relative_error'] = item['new_ms'] / item['measured_ms'] - 1
-    stage_path = ROOT / 'measured/stage_summary.csv'
     stage_measured = next(float(r['device_span_ms']) for r in rows(stage_path)
                           if r['stage'] == 'h3/audio_vae_decode')
     summary = {
@@ -148,8 +155,8 @@ def main():
         'measured_transpose_kernel_sum_ms': sum(m['total_ms'] for m in measured.values()),
         'unchanged_non_transpose_rows': checked, 'non_transpose_ms': other_new,
         'leaf_count': len(result.trace), 'transpose_count': 134,
-        'source_sha256': {str(p.relative_to(ROOT)): sha256(p) for p in
-                          (baseline_path, measured_path, stage_path, ROOT / 'reports/manifest.json')},
+        'source_sha256': {str(p): sha256(p) for p in
+                          (baseline_path, measured_path, stage_path, manifest_path)},
     }
     (output / 'comparison.json').write_text(json.dumps(summary, indent=2) + '\n')
     shape_path = output / 'transpose_shapes.csv'
@@ -160,6 +167,8 @@ def main():
     longest = max((item for item in groups.values() if json.loads(item['geometry'])['groups'] > 1),
                   key=lambda item: json.loads(item['geometry'])['length'])
     dense_first = next(iter(groups.values()))
+    ps_paths = ["'" + str(path).replace("'", "''") + "'"
+                for path in (baseline_path.parent, manifest_path, measured_path.parent)]
     text = f'''# 音频转置卷积分块模型对比
 
 固定原报告配置：910B3 单卡，FP32 音频，latent 长度 207，计算效率 0.65，Cube/Vector HBM 效率 0.60。preset 默认值未修改。预测先执行，之后才读取实测作评估；无拟合系数。
@@ -186,8 +195,8 @@ def main():
 
 复现（输出目录必须不存在）：
 
-```sh
-.venv/bin/python scripts/minimax_h3_audio_transpose_comparison.py --output-dir outputs/audio_transpose_tiling_recheck
+```powershell
+.\\.venv\\Scripts\\python.exe scripts/minimax_h3_audio_transpose_comparison.py --baseline-dir {ps_paths[0]} --manifest {ps_paths[1]} --measured-dir {ps_paths[2]} --output-dir outputs/audio_transpose_tiling_recheck
 ```
 '''
     (output / 'comparison.md').write_text(text, encoding='utf-8')

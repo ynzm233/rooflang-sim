@@ -76,7 +76,7 @@ MAGI 的 `request_per_second` 表示已建模加速器工作范围内的 clips/s
 | `transpose_schedule`、`activation_peak_bytes_proxy` | B3 音频转置卷积的相位／分块／关键核心调度、执行工作量与重读流量；容量代理使用边界张量，不累加 tile 重读 |
 | `host_to_device_bytes`、`copy_time_ms`、`exposed_transfer_time_ms`、`weight_peak_bytes` | 每关键 rank 的逐层卸载传输、DMA 资源时间、暴露搬运时间与层缓冲区权重峰值；存在计算重叠时不可直接把 copy_time 加到阶段时间 |
 
-音频转置卷积的 `flops` 为参考数学算量，`flops_by_dtype` 为包含 tile padding 的执行算量；其计算时间按关键核心波次计算，不保证等于执行总 FLOPs 除整卡吞吐。Qwen FIA 的计算工作量也包含分块／对齐代理，须结合其 pair 字段解释。当前假设见 [H3 模型](minimax_h3.md) 与 [decode 模型](minimax_h3_decode.md)。
+音频转置卷积的 `flops` 为参考数学算量，`flops_by_dtype` 为包含 tile padding 的执行算量；其计算时间按关键核心波次计算，不保证等于执行总 FLOPs 除整卡吞吐。Qwen FIA 的计算工作量也包含分块／对齐代理，须结合其 pair 字段解释。当前假设见 [H3 模型](minimax_h3.md)。
 
 `measured_execution_time_ms` 是仿真器所选测量窗口内的时间，名称不代表来自物理 NPU profiler。外部实测的 `kernel_total_ms`、`device_busy_ms`、`device_span_ms` 和 `host_total_ms` 仅由独立比对输入提供；未提供的实测值不能由仿真补齐。
 
@@ -106,7 +106,9 @@ MAGI 的 `request_per_second` 表示已建模加速器工作范围内的 clips/s
 | `model_name`, `hardware_name`, `selected_stage` | 运行所选模型、硬件和阶段 |
 | `input_config` | 本次 JSON 与显式 CLI 工作负载选项合并后的输入，尚未全部填充模型默认值 |
 | `resolved_config` | 模型解析后的生效配置；MAGI 包含 dataclass 中的默认值和架构，其他模型可通过 metadata 的 `_resolved_config` 提供 |
-| `hardware` | 节点与链路数值快照，包括精度吞吐、容量、带宽和延迟；Python API 未传入硬件对象时为 `null`，仍保留硬件名字 |
+| `hardware` | 优先记录 `Workflow.hardware` 的运行副本，包括生效计算吞吐、物理通信边、容量和延迟；回退到显式传入硬件，两者都没有时为 `null` |
+
+模型的实际效率保存在 resolved config（H3 为 `workload.efficiency`，MAGI 为 `efficiency`）及 `hardware.metadata.efficiency`。通信边保持物理带宽，Simulator 另应用该系数；全局 HBM 效率仍在硬件假设中。细节见 [效率配置](efficiency.md)。
 
 Python 接入时应调用 `run_and_export(..., config=config, hardware=hardware)`，并让模型提供完整 `_resolved_config` 或 `_model_config`。否则输入可能为空、生效配置可能只能回退到输入，无法充分检查默认值漂移。
 

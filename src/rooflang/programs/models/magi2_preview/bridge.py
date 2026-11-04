@@ -21,6 +21,7 @@ from rooflang.language.placement import Placement
 from rooflang.language.tensor import Tensor
 from rooflang.language.utils import dtype_bytes
 from rooflang.runtime.simulator import Simulator
+from rooflang.runtime.efficiency import apply_memory_efficiency
 
 from .operators import CompositeOperator, OpType
 
@@ -74,9 +75,12 @@ def _tensor(size_bytes, dtype, weight_id=None, *, traffic=False):
 
 class AnalyticalKernel(Kernel):
     """A parameter-derived cost operation, scheduled by the RoofLang DES."""
-    def __init__(self, operator, metadata, weight_id):
+    def __init__(self, operator, metadata, weight_id, *, efficiency=None):
         self.operator = operator
         self.csv_metadata = metadata
+        self._efficiency = efficiency
+        if efficiency is not None:
+            self.csv_metadata["compute_peak_basis"] = "hardware_dtype_peak_with_unit_efficiency"
         details = operator.get_memory_details()
         self._activation = details.get("activation", 0) + details.get("kv_cache_read", 0)
         self._weight_read = details.get("weight_read", 0)
@@ -90,10 +94,19 @@ class AnalyticalKernel(Kernel):
         if component is not None and component.unit_type == "mixed":
             for unit in ("cube", "vector"):
                 dtype = component.get_unit_dtype(unit)
+                if efficiency is not None:
+                    dtype = f"{dtype}:{unit}"
                 self._compute_flops_by_dtype[dtype] = (
                     self._compute_flops_by_dtype.get(dtype, 0) + component.get_unit_flops(unit))
         else:
-            self._compute_flops_by_dtype[self._compute_dtype] = self._compute_flops
+            dtype = self._compute_dtype
+            if efficiency is not None:
+                unit = "vector" if component is None or component.unit_type == "storage" else component.unit_type
+                dtype = f"{dtype}:{unit}"
+            self._compute_flops_by_dtype[dtype] = self._compute_flops
+        if efficiency is not None:
+            self.csv_metadata["compute_dtype"] = "+".join(dict.fromkeys(
+                key.split(":", 1)[0] for key in self._compute_flops_by_dtype))
         # The reference formula specifies aggregate activation traffic. A native
         # traffic buffer charges that byte volume exactly on symmetric HBM links.
         # The descriptor has zero physical storage: aggregate traffic is not a
@@ -107,6 +120,24 @@ class AnalyticalKernel(Kernel):
                                                      traffic=True)})
         if resident:
             self.weight_read_fraction = self._weight_read / resident
+
+    def scheduled_compute_time_us(self, device):
+        if self._efficiency is None:
+            return None
+        # MAGI historically uses dtype peaks for both units, including on NPUs.
+        # Separate the coefficients without changing that model's peak basis.
+        base = device._efficiency_base_tflops
+        grouped_flops, peaks = {}, {}
+        for key, flops in self.flops_by_dtype.items():
+            dtype, unit = key.rsplit(":", 1)
+            peak = base.get(dtype, 0.0) * self._efficiency[f"{unit}_efficiency"]
+            if flops > 0 and peak <= 0:
+                raise ValueError(f"Device '{device.name}' has no compute for dtype '{dtype}'")
+            peaks[key] = peak
+            group = dtype, peak
+            grouped_flops[group] = grouped_flops.get(group, 0.0) + flops
+        self.csv_metadata["compute_effective_tflops_by_unit"] = peaks
+        return sum(flops / (peak * 1e6) for (_, peak), flops in grouped_flops.items() if peak > 0)
 
     @property
     def flops(self):
@@ -244,7 +275,12 @@ def _lower(nodes, component, hardware, devices):
                     resident_weights.setdefault(key, weight_id)
                 metadata = _metadata(node, component, label)
                 metadata["subcall_index"] = subcall_index
-                kernels.append(AnalyticalKernel(part, metadata, weight_id))
+                kernel = AnalyticalKernel(
+                    part, metadata, weight_id,
+                    efficiency=getattr(hardware, "metadata", {}).get("efficiency"),
+                )
+                apply_memory_efficiency(kernel, hardware)
+                kernels.append(kernel)
         for kernel in kernels:
             kernel.csv_metadata["recipe_node_index"] = index
             kernel.csv_metadata["graph_node_index"] = len(graph.kernels)

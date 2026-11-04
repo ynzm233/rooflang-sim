@@ -37,12 +37,14 @@ def main():
         ],
         'request_source': evidence['request_source'],
         'layerwise_offload': {'prefetch_size': 1, 'resident_layers': 0},
+        'efficiency': json.loads((ROOT / 'examples/minimax_h3_ref2va_910b_sp1.json').read_text())['efficiency'],
     }
     if args.transformer_fia_compute_efficiency is not None:
         config['transformer_fia_compute_efficiency'] = args.transformer_fia_compute_efficiency
     hardware = Ascend910B3(1)
     assumptions = hardware.metadata['simulation_assumptions']
     workflow = create_workflow(hardware, config)
+    efficiencies = workflow.hardware.metadata['efficiency']
     assert workflow.metadata['resolved_shape_summary']['packed_rows'] == shape['packed_rows']
     run_and_export(workflow, model_name='minimax_h3', hardware_name='Ascend910B3',
                    output_dir=output, config=config, hardware=hardware)
@@ -50,18 +52,18 @@ def main():
         stages = list(csv.DictReader(stream))
     result = {
         'scenario': 'Official Ref2VA, Ascend910B3, SP1, 49 updates, all seven stages rerun.',
-        'method': 'Current model and Ascend910B3 preset; '
-                  f"Cube compute {assumptions['cube_efficiency']:g}, "
-                  f"Vector compute {assumptions['vector_efficiency']:g}; "
-                  f"Cube operator HBM {assumptions['cube_memory_efficiency']:g}, "
-                  f"Vector operator HBM {assumptions['vector_memory_efficiency']:g}; "
+        'method': 'Current model efficiency configuration and Ascend910B3 preset; '
+                  f"Cube compute {efficiencies['cube_efficiency']:g}, "
+                  f"Vector compute {efficiencies['vector_efficiency']:g}; "
+                  f"Cube operator HBM {efficiencies['cube_memory_efficiency']:g}, "
+                  f"Vector operator HBM {efficiencies['vector_memory_efficiency']:g}; "
                   f"global HBM {assumptions['memory_efficiency']:g}; "
                   'no measured latency inputs or transpose fitting.',
         'plan': {k: v for k, v in workflow.metadata.items() if not k.startswith('_')},
         'stages': stages,
         'experiment_stage_seconds': {s['name']: float(s['execution_time_ms']) / 1000 for s in stages},
         'experiment_total_seconds': sum(float(s['execution_time_ms']) for s in stages) / 1000,
-        'hardware': hardware.metadata,
+        'hardware': workflow.hardware.metadata,
     }
     override_note = ''
     if args.transformer_fia_compute_efficiency is not None:
@@ -76,11 +78,11 @@ def main():
     (output / 'experiment_result.json').write_text(json.dumps(result, indent=2, ensure_ascii=False) + '\n')
     (output / 'result.md').write_text(
         '# MiniMax-H3 最新模型完整重跑\n\n'
-        '七阶段均由当前代码重新运行。配置为 910B3 单卡/SP1、49 步，采用当前硬件预设：'
-        f"Cube 计算效率 {assumptions['cube_efficiency']:g}、"
-        f"Vector 计算效率 {assumptions['vector_efficiency']:g}、"
-        f"Cube 算子 HBM 效率 {assumptions['cube_memory_efficiency']:g}、"
-        f"Vector 算子 HBM 效率 {assumptions['vector_memory_efficiency']:g}、"
+        '七阶段均由当前代码重新运行。配置为 910B3 单卡/SP1、49 步，采用示例模型效率配置：'
+        f"Cube 计算效率 {efficiencies['cube_efficiency']:g}、"
+        f"Vector 计算效率 {efficiencies['vector_efficiency']:g}、"
+        f"Cube 算子 HBM 效率 {efficiencies['cube_memory_efficiency']:g}、"
+        f"Vector 算子 HBM 效率 {efficiencies['vector_memory_efficiency']:g}、"
         f"全局 HBM 效率 {assumptions['memory_efficiency']:g}。"
         + override_note
         + '沿用已确认请求几何与 layerwise offload。'

@@ -11,4 +11,4 @@
   --measured-dir measured --output-dir outputs/minimax_h3_decode_validation
 ```
 
-算子身份、shape 和调用次数精确核对；数值回归浮点容差为 `rel_tol=1e-10, abs_tol=1e-8`。当前公式、硬件假设和时延见 [模型说明](../../docs/minimax_h3.md)，本次检查结果见 [验证记录](../../docs/validation.md)。
+算子身份、shape 和调用次数精确核对；数值回归浮点容差为 `rel_tol=1e-10, abs_tol=1e-8`。当前公式、硬件假设和时延见 [模型说明](../../docs/minimax_h3.md)，复现命令见 [结果复现与测试](../../README.md#5-结果复现与测试)。

@@ -4,5 +4,13 @@
   "preview_steps": 100,
   "refiner_steps": 5,
   "cp_size": 8,
-  "ep_size": 8
+  "ep_size": 8,
+  "efficiency": {
+    "cube_efficiency": 1.0,
+    "vector_efficiency": 1.0,
+    "cube_memory_efficiency": 1.0,
+    "vector_memory_efficiency": 1.0,
+    "intra_node_efficiency": 1.0,
+    "collective_efficiencies": {}
+  }
 }

@@ -43,7 +43,13 @@ MiniMax-H3 的 `fl2va` 包含首帧／尾帧／首尾两帧条件；`ref2va` 支
 
 `examples/` 仅保留上述 MiniMax-H3 SP1 主配置。双卡实验可复制该配置，将 `sp` 改为 `2`，并选择 `Ascend910B3_2Cards` 硬件。
 
-完整条件长度为 6915 rows，packed rows 为 82749。Host DMA 32 GB/s、HCCS 每方向 28 GB/s 等参数尚未实测校准，容量 proxy 不含 workspace。当前 B3 的 Cube 计算／访存效率均为 0.8，Vector 计算／访存效率均为 0.6。Qwen 视觉／文本 FIA 独立建模，音频转置卷积使用相位分块成本模型。来源、推导和限制见 [910B3 官方 Ref2VA 场景](docs/minimax_h3.md#910b3官方-ref2va-单卡与双卡)。
+完整条件长度为 6915 rows，packed rows 为 82749。Host DMA 32 GB/s、HCCS 每方向 28 GB/s 等参数尚未实测校准，容量 proxy 不含 workspace。随附模型配置显式指定 Cube 计算／访存效率均为 0.8，Vector 计算／访存效率均为 0.6。Qwen 视觉／文本 FIA 独立建模，音频转置卷积使用相位分块成本模型。来源、推导和限制见 [910B3 官方 Ref2VA 场景](docs/minimax_h3.md#910b3官方-ref2va-单卡与双卡)。
+
+### 模型效率系数
+
+在模型 JSON 的可选 `efficiency` 对象中填写 Cube/Vector 算力、Cube/Vector 访存、节点内通信和 collective 效率表。省略对象或部分字段时，缺项全部按 `1.0` 使用；显式数值必须有限且在 `(0,1]`。每次运行使用配置中的一组系数，切换硬件不会自动换系数。
+
+硬件预设不再保存这些系数；全局 HBM `memory_efficiency` 按约定保留原值。已有示例显式记录原系数，保持相同有效值下的结果；自定义旧配置若不补参数，将采用新默认值。完整字段、迁移示例、通信查表和新模型契约见 [模型效率配置](docs/efficiency.md)。
 
 ## 2. 新模型接入前准备什么
 
@@ -54,14 +60,14 @@ MiniMax-H3 的 `fl2va` 包含首帧／尾帧／首尾两帧条件；`ref2va` 支
 | 模型结构 | 各组件的层数、hidden size、头数、head dim、MLP/MoE、卷积核／步长、VAE 压缩与 patch、模块执行顺序 | 固定版本的模型 config 与官方代码；决定计算图和 FLOPs |
 | 权重与精度 | 各组件权重字节、共享／分片规则、计算和存储 dtype | 权重索引及 tensor shape；用于驻留权重和搬运，索引总量不能替代算子访存 |
 | 工作负载 | batch、帧数、尺寸、音频采样数、文本 token／condition rows、参考媒体形状、窗口与 tile、扩散步数、CFG 次数 | 用实际 tokenizer／processor 先测计数；保存 processor 版本、输入描述与计数来源 |
-| 部署与硬件 | TP/SP/CP/EP 等策略、卡数、各 dtype 吞吐、HBM 容量与带宽、拓扑／链路带宽／延迟／效率 | 硬件规格或标定结果；注明峰值与有效值，以及每卡／全局统计范围 |
+| 部署与硬件 | TP/SP/CP/EP 等策略、卡数、各 dtype 吞吐、HBM 容量与带宽、拓扑／链路带宽／延迟；模型 `efficiency` | 硬件规格与模型效率分别配置；注明峰值与有效值，以及每卡／全局统计范围 |
 | 验收基准 | 预期 shape、图执行次数、手算算子成本、参考计算结果、适用范围与近似 | 冻结完整精度结果和版本；模型时延与实测时延要分别标注 |
 
 接入步骤：
 
 1. 将架构和工作负载数据放入 `src/rooflang/programs/models/<模型>/`；配置必须校验非法值，并给出可运行的 `examples/<模型>.json`。
 2. 使用 `Kernel`、`ComputeGraph`、`Placement` 搭图；显式区分计算、访存、通信和共享权重，不把聚合流量当实际存储。
-3. 实现 `create_workflow(hardware, config) -> Workflow`，把阶段返回为 `StageResult`，用 `GraphResult.multiplier` 表示重复执行；显存峰值不随重复次数相乘。
+3. 实现 `create_workflow(hardware, config) -> Workflow`，通过公共效率接口准备本次硬件副本并保存到 `Workflow.hardware`；把阶段返回为 `StageResult`，用 `GraphResult.multiplier` 表示重复执行；显存峰值不随重复次数相乘。
 4. 在 `programs/models/__init__.py` 的 `MODEL_NAMES` 中注册模型，通过统一入口导出，并增加 shape、公式、加权汇总和容量回归测试。
 5. 记录建模依据、输入、运行环境、输出和局限；按照 [完整接入指南](docs/model_onboarding.md) 核对数据，参考 [可运行最小模型](examples/toy_model.py)。
 
@@ -92,7 +98,7 @@ MiniMax-H3 的 `fl2va` 包含首帧／尾帧／首尾两帧条件；`ref2va` 支
 | `summary.json` | 与阶段／计划 CSV 对应的机器可读原始数值，保留嵌套结构和完整浮点精度 |
 | `config.snapshot.json`、`provenance.json` | 合并后的输入、生效配置／架构、硬件快照；版本信息、运行环境和包内容 SHA-256，用于追溯与复现 |
 
-时间单位是 **ms**，流量／存储单位是 **bytes**；硬件内部字段 GB、GB/s 均使用十进制。910B3 的 64 GiB 物理 HBM 显式换算为 `68.719476736 GB`。A5 采用官方 950PR 的 128 GB 容量和 1600 GB/s 峰值带宽，并保留明确标注的效率与通信仿真假设；官方来源和假设随 `config.snapshot.json` 的 `hardware.metadata` 导出，详见 [A5 参数口径](docs/minimax_h3.md#硬件规格与仿真假设)。算子 CSV 中 `graph_multiplier` 表示该图执行次数，算子成本乘它才能与阶段工作量比较。`compute_ms`、`memory_ms`、`network_ms` 是资源工作量，不能直接相加当墙钟时延；有并行时也不能简单累加算子时延。阶段时延来自仿真时间线。`weight_read` 表示访问量，`weight_saved` 表示该行记账的权重；重复图不会把权重驻留倍增。
+时间单位是 **ms**，流量／存储单位是 **bytes**；硬件内部字段 GB、GB/s 均使用十进制。910B3 的 64 GiB 物理 HBM 显式换算为 `68.719476736 GB`。A5 采用官方 950PR 的 128 GB 容量和 1600 GB/s 峰值带宽，保留全局 HBM 效率与物理通信假设，其余效率来自模型配置；官方来源、假设与实际系数随 `config.snapshot.json` 的 `hardware.metadata` 导出，详见 [A5 参数口径](docs/minimax_h3.md#硬件规格与仿真假设)。算子 CSV 中 `graph_multiplier` 表示该图执行次数，算子成本乘它才能与阶段工作量比较。`compute_ms`、`memory_ms`、`network_ms` 是资源工作量，不能直接相加当墙钟时延；有并行时也不能简单累加算子时延。阶段时延来自仿真时间线。`weight_read` 表示访问量，`weight_saved` 表示该行记账的权重；重复图不会把权重驻留倍增。
 
 `timing_included=false` 或空时延表示未建模，**不表示零耗时**。`peak_activation_bytes` 是算子级代理；模型提供的 `peak_stage_memory_bytes` 是解析工作集。`is_valid=true` 表示在明确假设下容量可行，不等同于真实部署保证。只跑一个阶段时，计划汇总仅代表所选阶段。
 
@@ -100,7 +106,7 @@ MiniMax-H3 的 `fl2va` 包含首帧／尾帧／首尾两帧条件；`ref2va` 支
 
 ## 5. 结果复现与测试
 
-当前验收覆盖核心测试、MAGI 数值回归、MiniMax-H3 单卡完整流程和 decode 实测结构核对。验证结果与适用范围见 [validation.md](docs/validation.md)。
+当前验收覆盖核心测试、MAGI 数值回归、MiniMax-H3 单卡完整流程和 decode 实测结构核对。测试验证解析公式与固定基线的一致性，不替代 NPU 实测。
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest -q
@@ -116,7 +122,7 @@ MiniMax-H3 的 `fl2va` 包含首帧／尾帧／首尾两帧条件；`ref2va` 支
 | MAGI T2V | 46695.353821794 | 同上 |
 | MiniMax-H3 Ref2VA | 5447582.931051 | Ascend910B3 单卡 SP1，随附主配置，49 步、逐层卸载 |
 
-以上均于 2026-11-03 用当前代码核对，是**已建模部分的预测值，不是实测端到端时延**。MAGI CPU 文本编码未标定延迟；MiniMax-H3 的 attention、音频转置卷积分块调度及显存均含解析近似。具体遗漏项见 [MAGI 边界](docs/magi2_preview.md) 与 [MiniMax-H3 边界](docs/minimax_h3.md)。公式或预设变化后，应重跑案例并更新文档中的当前数值。
+以上均于 2026-11-04 用当前代码核对，是**已建模部分的预测值，不是实测端到端时延**。MAGI CPU 文本编码未标定延迟；MiniMax-H3 的 attention、音频转置卷积分块调度及显存均含解析近似。具体遗漏项见 [MAGI 边界](docs/magi2_preview.md) 与 [MiniMax-H3 边界](docs/minimax_h3.md)。公式或预设变化后，应重跑案例并更新文档中的当前数值。
 
 ## 6. 仓库结构与接口
 

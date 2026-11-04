@@ -1,0 +1,254 @@
+{
+  "source_commit": "d09f41d2279771f8704f77a1adc7f041501f20f0",
+  "scope": "Analytical simulation before efficiency interface migration; not device measurements.",
+  "cases": {
+    "h3_a5": {
+      "transformer_denoise": [
+        {
+          "label": "transformer_denoise",
+          "multiplier": 1,
+          "time_us": 4383666.955872075,
+          "trace_count": 2164,
+          "total_flops": 1044869755224960,
+          "transferred_bytes": 597567412426,
+          "peak_memory": {
+            "hbm-0": 64694777344,
+            "hbm-1": 0,
+            "hbm-2": 0,
+            "hbm-3": 0
+          }
+        }
+      ]
+    },
+    "h3_b3": {
+      "audio_vae_decode": [
+        {
+          "label": "audio_vae_decode",
+          "multiplier": 1,
+          "time_us": 95581.8446979182,
+          "trace_count": 4590,
+          "total_flops": 518764180586,
+          "transferred_bytes": 89672879668,
+          "peak_memory": {
+            "hbm-0": 259757412
+          }
+        }
+      ],
+      "condition_vae_encode": [
+        {
+          "label": "condition_video_0",
+          "multiplier": 224,
+          "time_us": 39919.463088888886,
+          "trace_count": 46,
+          "total_flops": 8957446717440,
+          "transferred_bytes": 6671967744,
+          "peak_memory": {
+            "hbm-0": 360613376
+          }
+        },
+        {
+          "label": "condition_audio_0",
+          "multiplier": 1,
+          "time_us": 3193.526500000001,
+          "trace_count": 40,
+          "total_flops": 664107614208,
+          "transferred_bytes": 1846543488,
+          "peak_memory": {
+            "hbm-0": 147460992
+          }
+        }
+      ],
+      "qwen_text_condition": [
+        {
+          "label": "qwen_text_condition",
+          "multiplier": 1,
+          "time_us": 1405799.5398095194,
+          "trace_count": 1604,
+          "total_flops": 231140028497920,
+          "transferred_bytes": 209297916160,
+          "peak_memory": {
+            "hbm-0": 63968411648,
+            "hbm-1": 0
+          }
+        }
+      ],
+      "qwen_vision_encode": [
+        {
+          "label": "qwen_vision_video",
+          "multiplier": 1,
+          "time_us": 208330.53960000002,
+          "trace_count": 611,
+          "total_flops": 18176027498496,
+          "transferred_bytes": 35973022572,
+          "peak_memory": {
+            "hbm-0": 1184539392,
+            "hbm-1": 0
+          }
+        }
+      ],
+      "transformer_denoise": [
+        {
+          "label": "transformer_denoise",
+          "multiplier": 1,
+          "time_us": 55492971.25032679,
+          "trace_count": 1764,
+          "total_flops": 6476522469206272,
+          "transferred_bytes": 1911501991698,
+          "peak_memory": {
+            "hbm-0": 64694777344,
+            "hbm-1": 0
+          }
+        }
+      ],
+      "transformer_text_refiner": [
+        {
+          "label": "transformer_text_refiner",
+          "multiplier": 1,
+          "time_us": 64422.778133333326,
+          "trace_count": 31,
+          "total_flops": 11629055377408,
+          "transferred_bytes": 8419759624,
+          "peak_memory": {
+            "hbm-0": 1541461504
+          }
+        }
+      ],
+      "video_vae_decode": [
+        {
+          "label": "video_vae_decode",
+          "multiplier": 196,
+          "time_us": 88710.18509166743,
+          "trace_count": 2332,
+          "total_flops": 9721235927120,
+          "transferred_bytes": 47235298152,
+          "peak_memory": {
+            "hbm-0": 4860369248
+          }
+        },
+        {
+          "label": "video_vae_decode_stitch",
+          "multiplier": 1,
+          "time_us": 71442.23171666726,
+          "trace_count": 2642,
+          "total_flops": 1897168896,
+          "transferred_bytes": 68584542448,
+          "peak_memory": {
+            "hbm-0": 0
+          }
+        }
+      ]
+    },
+    "magi_b300": {
+      "audio_vae_decode": [
+        {
+          "label": "audio_vae_decode",
+          "multiplier": 1,
+          "time_us": 3012.0651856057348,
+          "trace_count": 127,
+          "total_flops": 1266444073346,
+          "transferred_bytes": 19438884360,
+          "peak_memory": {
+            "n0-hbm3e-0": 312490504
+          }
+        }
+      ],
+      "preview_denoise": [
+        {
+          "label": "preview_denoise",
+          "multiplier": 1,
+          "time_us": 63039.072694138806,
+          "trace_count": 4080,
+          "total_flops": 85983030447317.44,
+          "transferred_bytes": 258539662392,
+          "peak_memory": {
+            "n0-hbm3e-0": 46815547584,
+            "n0-hbm3e-1": 0,
+            "n0-hbm3e-2": 0,
+            "n0-hbm3e-3": 0,
+            "n0-hbm3e-4": 0,
+            "n0-hbm3e-5": 0,
+            "n0-hbm3e-6": 0,
+            "n0-hbm3e-7": 0
+          }
+        }
+      ],
+      "text_encode": [
+        {
+          "label": "text_broadcast",
+          "multiplier": 1,
+          "time_us": 101.38789333333331,
+          "trace_count": 144,
+          "total_flops": 0,
+          "transferred_bytes": 600392832,
+          "peak_memory": {
+            "n0-hbm3e-0": 0,
+            "n0-hbm3e-1": 0,
+            "n0-hbm3e-2": 0,
+            "n0-hbm3e-3": 0,
+            "n0-hbm3e-4": 0,
+            "n0-hbm3e-5": 0,
+            "n0-hbm3e-6": 0,
+            "n0-hbm3e-7": 0
+          }
+        }
+      ],
+      "video_vae_decode": [
+        {
+          "label": "video_decode_window_00",
+          "multiplier": 1,
+          "time_us": 7954.9656327808525,
+          "trace_count": 234,
+          "total_flops": 11333418041344,
+          "transferred_bytes": 28688380312,
+          "peak_memory": {
+            "n0-hbm3e-0": 214245784
+          }
+        },
+        {
+          "label": "video_decode_window_01",
+          "multiplier": 1,
+          "time_us": 9771.3744718204,
+          "trace_count": 234,
+          "total_flops": 13919026544640,
+          "transferred_bytes": 35200723352,
+          "peak_memory": {
+            "n0-hbm3e-0": 214245784
+          }
+        },
+        {
+          "label": "video_decode_window_02",
+          "multiplier": 1,
+          "time_us": 9771.3744718204,
+          "trace_count": 234,
+          "total_flops": 13919026544640,
+          "transferred_bytes": 35200723352,
+          "peak_memory": {
+            "n0-hbm3e-0": 214245784
+          }
+        },
+        {
+          "label": "video_decode_window_03",
+          "multiplier": 1,
+          "time_us": 9771.3744718204,
+          "trace_count": 234,
+          "total_flops": 13919026544640,
+          "transferred_bytes": 35200723352,
+          "peak_memory": {
+            "n0-hbm3e-0": 214245784
+          }
+        },
+        {
+          "label": "video_decode_window_04",
+          "multiplier": 1,
+          "time_us": 8696.884031266869,
+          "trace_count": 234,
+          "total_flops": 12372468039680,
+          "transferred_bytes": 31420936600,
+          "peak_memory": {
+            "n0-hbm3e-0": 214245784
+          }
+        }
+      ]
+    }
+  }
+}

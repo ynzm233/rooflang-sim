@@ -52,14 +52,16 @@ def hardware_snapshot(hardware):
 
 
 def config_snapshot(workflow, *, model_name, hardware_name, stage, config, hardware):
+    if getattr(workflow, "hardware", None) is not None:
+        hardware = workflow.hardware
     resolved = workflow.metadata.get("_resolved_config")
     if resolved is None:
         model_config = workflow.metadata.get("_model_config")
         resolved = asdict(model_config) if is_dataclass(model_config) else dict(config or {})
     return {
         "model_name": model_name, "hardware_name": hardware_name,
-        "selected_stage": stage, "input_config": dict(config or {}),
-        "resolved_config": resolved, "hardware": hardware_snapshot(hardware),
+        "selected_stage": stage, "input_config": deepcopy(config or {}),
+        "resolved_config": deepcopy(resolved), "hardware": hardware_snapshot(hardware),
     }
 
 

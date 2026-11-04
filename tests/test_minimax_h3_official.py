@@ -144,7 +144,7 @@ def test_selected_stage_capacity_failure_preserves_transfer_metadata(modeled_gra
     workflow = workflow_module.create_workflow(hardware, profile_config())
     workflow.run("transformer_denoise")
     boundary = workflow.metadata["peak_stage_memory_bytes"]
-    for memory in (n for n in hardware.nodes if n.kind == "hbm"):
+    for memory in (n for n in workflow.hardware.nodes if n.kind == "hbm"):
         memory.capacity_gb = (boundary - 1) / 1e9
     workflow.run("transformer_denoise")
     assert not workflow.metadata["is_valid"]

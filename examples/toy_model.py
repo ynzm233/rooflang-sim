@@ -23,6 +23,7 @@ from rooflang.programs.experiments.run_and_export import run_and_export
 from rooflang.programs.experiments.simulation import simulate
 from rooflang.programs.experiments.workflow import Workflow
 from rooflang.runtime.stages import GraphResult, StageResult
+from rooflang.runtime.efficiency import prepare_hardware, resolve_efficiency
 
 
 class Affine(Kernel):
@@ -45,6 +46,10 @@ class Affine(Kernel):
     def flops(self):
         return 2 * self.inputs["x"].n_elements
 
+    @property
+    def flops_by_dtype(self):
+        return {"bf16:vector": self.flops}
+
 
 def make_hardware():
     """Deliberately simple reference device: 1 BF16 TFLOP/s, 100 GB/s, 1 GB."""
@@ -61,6 +66,9 @@ def make_hardware():
 
 
 def create_workflow(hardware, config):
+    config = dict(config)
+    efficiency = resolve_efficiency(config.pop("efficiency", None))
+    hardware = prepare_hardware(hardware, efficiency)
     defaults = {"batch_size": 1, "tokens": 32, "hidden": 16, "steps": 3}
     if unknown := set(config) - defaults.keys():
         raise ValueError(f"Unknown toy fields: {sorted(unknown)}")
@@ -68,6 +76,7 @@ def create_workflow(hardware, config):
     for name, value in resolved.items():
         if type(value) is not int or value <= 0:
             raise ValueError(f"{name} must be a positive integer")
+    resolved["efficiency"] = efficiency
     devices = sorted((node for node in hardware.nodes
                       if isinstance(node, Compute) and node.kind == "gpu"),
                      key=lambda node: node.name)
@@ -76,6 +85,9 @@ def create_workflow(hardware, config):
 
     def run_stage():
         kernel = Affine(resolved["batch_size"], resolved["tokens"], resolved["hidden"])
+        kernel.local_memory_efficiency = efficiency["vector_memory_efficiency"]
+        kernel.csv_metadata = {"compute_dtype": "bf16",
+                               "local_memory_efficiency": kernel.local_memory_efficiency}
         graph = ComputeGraph()
         graph.add_kernel(kernel)
         placement = Placement(hardware, graph)
@@ -90,7 +102,7 @@ def create_workflow(hardware, config):
         "workload": resolved, "request_count": 1,
         "_resolved_config": dict(resolved),
         "timing_status": "modeled_toy_affine_only",
-    })
+    }, hardware=hardware)
 
 
 class ExampleChecks(unittest.TestCase):

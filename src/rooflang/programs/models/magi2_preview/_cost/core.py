@@ -7,12 +7,14 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field, fields
 from enum import Enum, auto
 import functools
-from typing import Any, Optional, Literal, get_type_hints
+from types import UnionType
+from typing import Any, Optional, Literal, Union, get_args, get_origin, get_type_hints
 
 ComputeUnitType = Literal["cube", "vector", "mixed", "storage"]
 DTYPE_INFO = {
     "fp4": {"size": 0.5},
     "fp8": {"size": 1},
+    "ue8m0": {"size": 1},
     "fp16": {"size": 2},
     "fp32": {"size": 4},
     "bf4": {"size": 0.5},
@@ -21,6 +23,7 @@ DTYPE_INFO = {
     "bf32": {"size": 4},
     "int8": {"size": 1},
     "int32": {"size": 4},
+    "int64": {"size": 8},
     "mix2.5": {"size": 0.3125}
 }
 
@@ -28,13 +31,11 @@ DTYPE_INFO = {
 DEFAULT_DTYPE = "fp16"
 
 
-def _get_dtype_info(dtype: str, key: str, default) -> int | float:
-    return DTYPE_INFO.get(dtype, {}).get(key, default)
-
-
-def get_dtype_size(dtype: str) -> int:
+def get_dtype_size(dtype: str) -> float:
     """Get size in bytes for a dtype."""
-    return float(_get_dtype_info(dtype, "size", 2))
+    if dtype not in DTYPE_INFO:
+        raise ValueError(f"unknown dtype: {dtype}")
+    return float(DTYPE_INFO[dtype]["size"])
 
 
 @dataclass(frozen=True)
@@ -45,6 +46,10 @@ class QuantConfig:
     weight_storage_dtype: str = DEFAULT_DTYPE
     kv_storage_dtype: str = DEFAULT_DTYPE
     communicate_dtype: str = DEFAULT_DTYPE
+
+    def __post_init__(self):
+        for spec in fields(self):
+            get_dtype_size(getattr(self, spec.name))
 
     def get_compute_size(self) -> int:
         return get_dtype_size(self.compute_dtype)
@@ -96,20 +101,23 @@ class OperatorParams:
         for spec in self._get_param_specs():
             value = getattr(self, spec.name)
 
-            if value is not None and spec.type_ is not Any:
-                try:
-                    type_ok = isinstance(value, spec.type_)
-                except TypeError:
-                    type_ok = True
+            if spec.type_ is not Any:
+                expected_types = (get_args(spec.type_) if get_origin(spec.type_) in (Union, UnionType)
+                                  else (spec.type_,))
+                type_ok = False
+                for expected in expected_types:
+                    kind = get_origin(expected) or expected
+                    if kind in (int, bool):
+                        type_ok |= type(value) is kind
+                    elif kind is float:
+                        type_ok |= type(value) in (int, float)
+                    else:
+                        type_ok |= isinstance(value, kind)
                 if not type_ok:
-                    try:
-                        value = spec.type_(value)
-                        setattr(self, spec.name, value)
-                    except (TypeError, ValueError):
-                        raise TypeError(
-                            f"Parameter '{spec.name}' must be {spec.type_.__name__}, "
-                            f"got {type(value).__name__}"
-                        )
+                    raise TypeError(
+                        f"Parameter '{spec.name}' must be {spec.type_}, "
+                        f"got {type(value).__name__}"
+                    )
 
             if value is not None and spec.min is not None and value < spec.min:
                 raise ValueError(
@@ -202,6 +210,8 @@ class Operator(ABC):
         self.communicate_dtype = self.quant_config.communicate_dtype
 
         self.params = self.PARAM_CLASS(**kwargs) if self.PARAM_CLASS is not None else None
+        if self.params is not None:
+            self.params.validate()
 
         self.parse_args(**kwargs)
 

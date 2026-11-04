@@ -145,7 +145,7 @@ class ComputeGraph:
             self._remove_data_mapping(k1, k2, k1_out)
 
     def remove_identity(self, kernel: Kernel) -> None:
-        """Remove an identity kernel, reconnecting predecessor to successor."""
+        """Remove an identity, retaining all data and control ordering."""
         in_edges = self._in_edges(kernel)
         out_edges = self._out_edges(kernel)
         if len(in_edges) != 1 or len(out_edges) != 1:
@@ -162,6 +162,9 @@ class ComputeGraph:
         for k_in, k_out in zip(k_ins, k_outs):
             reconnect[src_output_by_input[k_in]] = dst_edge.mapping[k_out]
         self.add_data_edge(src_edge.src, dst_edge.dst, reconnect)
+        for predecessor in list(self._dag.predecessors(kernel)):
+            for successor in list(self._dag.successors(kernel)):
+                self.add_control_edge(predecessor, successor)
         self.remove_kernel(kernel)
 
     def fuse_kernels(
@@ -177,6 +180,8 @@ class ComputeGraph:
         can be a forest). External inputs (edges from outside the subgraph
         into roots) are rewired to the fused kernel. External outputs (edges
         from exits to outside the subgraph) are rewired from the fused kernel.
+        A path that leaves and re-enters the subgraph cannot be fused, because
+        contracting it would create a cycle; reject it before modifying the graph.
 
         Returns the fused kernel (already inserted into the graph).
         """
@@ -185,6 +190,14 @@ class ComputeGraph:
         for k in kernel_list:
             self._check_in_graph(k)
         subgraph = set(kernel_list)
+        outside_successors = {
+            successor for kernel in subgraph
+            for successor in self._dag.successors(kernel) if successor not in subgraph
+        }
+        if any(subgraph.intersection(nx.descendants(self._dag, successor))
+               for successor in outside_successors):
+            raise ValueError("Cannot fuse kernels across an external dependency path")
+        control_edges = self._control_edges(kernel_list)
         fused = fuse_class(kernel_list)
         self.add_kernel(fused)
         for k in kernel_list:
@@ -194,6 +207,11 @@ class ComputeGraph:
             for edge in self._out_edges(k):
                 if edge.dst not in subgraph:
                     self.add_data_edge(fused, edge.dst, edge.mapping)
+        for src, dst in control_edges:
+            src = fused if src in subgraph else src
+            dst = fused if dst in subgraph else dst
+            if src is not dst:
+                self.add_control_edge(src, dst)
         for k in kernel_list:
             self.remove_kernel(k)
         return fused
@@ -232,6 +250,7 @@ class ComputeGraph:
 
         in_edges = self._in_edges(kernel)
         out_edges = self._out_edges(kernel)
+        control_edges = self._control_edges([kernel])
 
         # Wire predecessors → prev_comms (each in_edge port maps to its comm)
         for port_name, comm in prev_comms.items():
@@ -260,6 +279,12 @@ class ComputeGraph:
                 comm = next_comms[src_out]
                 self.add_data_edge(comm, edge.dst, {"y": dst_in})
 
+        for src, dst in control_edges:
+            sources = (list(next_comms.values()) or copies) if src is kernel else [src]
+            destinations = (list(prev_comms.values()) or copies) if dst is kernel else [dst]
+            for source in sources:
+                for destination in destinations:
+                    self.add_control_edge(source, destination)
         self.remove_kernel(kernel)
         return prev_comms, copies, next_comms
 
@@ -278,6 +303,8 @@ class ComputeGraph:
         - All kernels have no side effects.
         - All kernels are computationally identical (same type + to_dict).
         - All share the same Broadcast predecessor, or all are roots.
+        - Kernels and their Broadcast have no control edges; this callback
+          defines data ports, not how barriers move across a broadcast.
 
         dedup_class(kernel_list) -> (survivor, post_broadcast) where:
           - survivor: Kernel to keep (may be from kernel_list or new).
@@ -320,6 +347,12 @@ class ComputeGraph:
                 raise ValueError(
                     f"Dedup precondition violated: {k} must have either no "
                     f"predecessor or a single Broadcast predecessor")
+
+        # Moving a broadcast changes when control barriers are reached. The
+        # callback contract only defines data ports, so do not guess their order.
+        controlled = list(kernel_list) + ([old_broadcast] if old_broadcast else [])
+        if self._control_edges(controlled):
+            raise ValueError("Cannot dedup kernels or broadcasts with control edges")
 
         all_out_edges = []
         for k in kernel_list:
@@ -368,6 +401,8 @@ class ComputeGraph:
         Preconditions (checked):
         - kernel has no side effects.
         - kernel's only data successor is a Broadcast.
+        - kernel and Broadcast have no control edges; their timing cannot be
+          preserved by this data-port-only callback contract.
 
         dup_class(kernel, n) -> (pre_broadcast, copies) where:
           - pre_broadcast: Kernel placed before copies. Its inputs are ordered
@@ -389,6 +424,8 @@ class ComputeGraph:
                 "Dup precondition violated: kernel's only data successor "
                 "must be a Broadcast")
         old_broadcast = out_edges[0].dst
+        if self._control_edges([kernel, old_broadcast]):
+            raise ValueError("Cannot dup kernels or broadcasts with control edges")
         bcast_out_edges = self._out_edges(old_broadcast)
         n = len(bcast_out_edges)
 
@@ -504,6 +541,16 @@ class ComputeGraph:
                 kernel.validate_ports()
 
     # ── Internals ─────────────────────────────────────────────────────
+
+    def _control_edges(self, kernels: List[Kernel]) -> List[Tuple[Kernel, Kernel]]:
+        """Return control edges touching these kernels, preserving graph order."""
+        edges = {}
+        for kernel in kernels:
+            for src, dst, attrs in (*self._dag.in_edges(kernel, data=True),
+                                    *self._dag.out_edges(kernel, data=True)):
+                if not attrs["mapping"]:
+                    edges[src, dst] = None
+        return list(edges)
 
     def _in_edges(self, kernel: Kernel) -> List[DataEdge]:
         self._check_in_graph(kernel)

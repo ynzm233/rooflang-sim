@@ -13,6 +13,7 @@ from rooflang.runtime.stages import GraphResult, StageResult
 
 from .accounting import cpu_text_accounting, memory_accounting
 from .config import Magi2Config, load_workload
+from rooflang.runtime.efficiency import prepare_hardware
 
 
 def _resolve_config(overrides):
@@ -41,6 +42,7 @@ def _resolve_config(overrides):
 
 def create_workflow(hardware, config):
     cfg = _resolve_config(config)
+    hardware = prepare_hardware(hardware, cfg.efficiency)
     mm = cfg.runtime_multimodal_config()
     shape = mm["shape_summary"]
     gpu_nodes = [node for node in hardware.nodes
@@ -149,9 +151,10 @@ def create_workflow(hardware, config):
         "refiner_steps": cfg.refiner_steps, "resolved_shape_summary": shape,
         "_model_config": cfg,
         "compute_scope": "critical_rank_per_stage_not_global_device_sum",
+        "compute_peak_basis": "hardware_dtype_peak_with_unit_efficiency",
         "timing_status": "partial_cpu_and_postprocess_untimed",
         "end_to_end_timing_complete": False,
         "timing_backend": "rooflang_discrete_event_simulator",
         "memory_status": "analytical_working_set_proxy_not_measured_allocator_peak",
         "capacity_verdict_is_provisional": True,
-    }, summarize)
+    }, summarize, hardware=hardware)

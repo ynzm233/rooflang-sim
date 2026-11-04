@@ -21,6 +21,12 @@ class GroupMatmulParams(OperatorParams):
     in_features: int = field(default=0, metadata={"min": 1, "desc": "Per-expert input dim"})
     out_features: int = field(default=0, metadata={"min": 1, "desc": "Per-expert output dim"})
 
+    def validate(self):
+        super().validate()
+        if not self.expert_token_list or any(type(tokens) is not int or tokens < 0
+                                             for tokens in self.expert_token_list):
+            raise ValueError("expert_token_list must contain one nonnegative integer per resident expert")
+
 
 @Registry.register_operator("group_matmul", op_type=OpType.COMPUTE)
 class GroupMatmulOperator(Operator):

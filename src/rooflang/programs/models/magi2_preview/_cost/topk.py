@@ -15,6 +15,11 @@ class TopkParams(OperatorParams):
     dim: int = field(default=768, metadata={"min": 1, "desc": "Feature dimension (D)"})
     k: int = field(default=1, metadata={"min": 1, "desc": "Number of top elements (K)"})
 
+    def validate(self):
+        super().validate()
+        if self.k > self.dim:
+            raise ValueError("topk k cannot exceed dim")
+
 @Registry.register_operator("topk", op_type=OpType.COMPUTE)
 class TopkOperator(Operator):
     """Topk operator (finds the K largest elements)."""
@@ -49,7 +54,9 @@ class TopkOperator(Operator):
 
     def get_memory_details(self) -> dict[str, int]:
         a_sz = self.quant_config.get_compute_size()
-        activation_bytes = (self._num_input_elements + self._num_output_elements) * a_sz
+        # torch.topk returns both values and LongTensor indices:
+        # https://docs.pytorch.org/docs/2.15/generated/torch.topk.html
+        activation_bytes = (self._num_input_elements + self._num_output_elements) * a_sz + self._num_output_elements * 8
         return self.memory_details(
             activation=activation_bytes
         )

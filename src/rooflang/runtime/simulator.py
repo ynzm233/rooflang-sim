@@ -23,6 +23,7 @@ from rooflang.language.kernels.comm import AllToAll, CommKernel, Recv, Send
 from rooflang.language.kernels.kernel import Kernel
 from rooflang.language.placement import MemoryFootprint, Placement
 from rooflang.language.tensor import Tensor
+from rooflang.runtime.efficiency import communication_efficiency, remote_memory_efficiency
 
 FabricKey = Tuple[FabricEdge, Optional[str]]
 
@@ -34,6 +35,23 @@ def _fabric_key(edge: FabricEdge, direction: str) -> FabricKey:
 def _direction_bw(edge: FabricEdge, direction: str) -> float:
     return edge.src_to_dst_bandwidth_gbs if direction == 'fwd' \
         else edge.dst_to_src_bandwidth_gbs
+
+
+def _accumulate_link_transfer(link_data, key, size_bytes, bandwidth):
+    previous = link_data.get(key)
+    if previous is None:
+        link_data[key] = [size_bytes, bandwidth]
+        return
+    previous_bytes, previous_bandwidth = previous
+    total_bytes = previous_bytes + size_bytes
+    if size_bytes > 0 and previous_bandwidth != bandwidth:
+        # Shared links may carry both intra-node and cross-node transfers.
+        # Preserve each transfer's service time, regardless of tensor order.
+        bandwidth = (total_bytes / (previous_bytes / previous_bandwidth
+                                     + size_bytes / bandwidth)
+                     if previous_bytes > 0 else bandwidth)
+        previous[1] = bandwidth
+    previous[0] = total_bytes
 
 
 class Bound(Enum):
@@ -455,10 +473,12 @@ class Simulator:
     # ── Memory tracking ────────────────────────────────────────────
 
     def _build_passthrough(self) -> Dict[Tensor, list]:
-        """Map comm/structural identity outputs to upstream storage tensors."""
+        """Map structural identity outputs to upstream storage tensors."""
         pt: Dict[Tensor, list] = {}
         for kernel in self._graph.topological_sort():
-            if kernel._requires_placement:
+            # Communication materializes its declared receive buffers. Their
+            # storage_bytes may be zero for aggregate traffic descriptors.
+            if kernel._requires_placement or isinstance(kernel, CommKernel):
                 continue
             all_sources = []
             seen_sources = set()
@@ -480,6 +500,16 @@ class Simulator:
                 continue
             mem = self._placement.get_tensor_memory(t)
             if mem is None:
+                continue
+            # Reusing the exact upstream Tensor explicitly aliases its storage.
+            if (t, "output") in self._alive[mem]:
+                continue
+            if t in self._root_inputs.get(kernel, ()):
+                # An in-place root input becomes the output allocation; keep
+                # it until output consumers finish, rather than freeing it now.
+                self._root_inputs[kernel].remove(t)
+                self._alive[mem].discard((t, "root_input"))
+                self._alive[mem].add((t, "output"))
                 continue
             self._mem_usage[mem] += t.storage_bytes
             self._alive[mem].add((t, "output"))
@@ -657,6 +687,8 @@ class Simulator:
         else:
             effective_bandwidth = self._hardware.find_aggregate_bandwidth(
                 list(devices))
+        effective_bandwidth *= communication_efficiency(
+            self._hardware, devices, point_to_point=point_to_point)
         alpha = max(fabric.alpha_us for fabric in pair_fabrics)
         result = (tuple(link_bandwidth.items()), effective_bandwidth, alpha)
         self._collective_info_cache[cache_key] = result
@@ -690,7 +722,8 @@ class Simulator:
                 mem = self._placement.get_tensor_memory(t) or local_mem
                 if mem is local_mem:
                     fab = self._hardware.find_fabric(device, mem)
-                    bw = fab.dst_to_src_bandwidth_gbs * 1e3
+                    direction = 'rev' if fab.src is device else 'fwd'
+                    bw = _direction_bw(fab, direction) * 1e3
                     if size_bytes > 0 and bw <= 0:
                         raise ValueError(
                             f"Zero read bandwidth on fabric '{fab.name}' "
@@ -699,19 +732,20 @@ class Simulator:
                         mt += size_bytes / bw
                 else:
                     path = self._hardware.find_fabric_path_directed(device, mem)
+                    peer_efficiency = remote_memory_efficiency(self._hardware, device, mem)
                     for edge, direction in path:
                         rev_dir = 'rev' if direction == 'fwd' else 'fwd'
                         key = _fabric_key(edge, rev_dir)
                         bw_gbs = _direction_bw(edge, rev_dir)
-                        if key in link_data:
-                            link_data[key][0] += size_bytes
-                        else:
-                            link_data[key] = [size_bytes, bw_gbs]
+                        if not isinstance(edge.src, Memory) and not isinstance(edge.dst, Memory):
+                            bw_gbs *= peer_efficiency
+                        _accumulate_link_transfer(link_data, key, size_bytes, bw_gbs)
             for t in kernel.outputs.values():
                 mem = self._placement.get_tensor_memory(t) or local_mem
                 if mem is local_mem:
                     fab = self._hardware.find_fabric(device, mem)
-                    bw = fab.src_to_dst_bandwidth_gbs * 1e3
+                    direction = 'fwd' if fab.src is device else 'rev'
+                    bw = _direction_bw(fab, direction) * 1e3
                     if t.size_bytes > 0 and bw <= 0:
                         raise ValueError(
                             f"Zero write bandwidth on fabric '{fab.name}' "
@@ -720,13 +754,13 @@ class Simulator:
                         mt += t.size_bytes / bw
                 else:
                     path = self._hardware.find_fabric_path_directed(device, mem)
+                    peer_efficiency = remote_memory_efficiency(self._hardware, device, mem)
                     for edge, direction in path:
                         key = _fabric_key(edge, direction)
                         bw_gbs = _direction_bw(edge, direction)
-                        if key in link_data:
-                            link_data[key][0] += t.size_bytes
-                        else:
-                            link_data[key] = [t.size_bytes, bw_gbs]
+                        if not isinstance(edge.src, Memory) and not isinstance(edge.dst, Memory):
+                            bw_gbs *= peer_efficiency
+                        _accumulate_link_transfer(link_data, key, t.size_bytes, bw_gbs)
 
         alpha = 0.0
         if isinstance(kernel, CommKernel) and len(participants) >= 2 \
@@ -740,14 +774,16 @@ class Simulator:
                 and kernel.transferred_bytes > 0:
             local_mem = self._hardware.find_local_memory(device)
             fab = self._hardware.find_fabric(device, local_mem)
-            read_bw = fab.dst_to_src_bandwidth_gbs * 1e3
-            write_bw = fab.src_to_dst_bandwidth_gbs * 1e3
+            write_direction = 'fwd' if fab.src is device else 'rev'
+            read_direction = 'rev' if fab.src is device else 'fwd'
+            read_bw = _direction_bw(fab, read_direction) * 1e3
+            write_bw = _direction_bw(fab, write_direction) * 1e3
             if read_bw > 0 and write_bw > 0:
                 mt = max(kernel.total_bytes / read_bw,
                          kernel.total_bytes / write_bw)
-            key = _fabric_key(fab, 'fwd')
+            key = _fabric_key(fab, write_direction)
             if key not in link_data:
-                link_data[key] = [0.0, fab.src_to_dst_bandwidth_gbs]
+                link_data[key] = [0.0, _direction_bw(fab, write_direction)]
 
         if not (isinstance(kernel, CommKernel) and len(participants) >= 2
                 and kernel.transferred_bytes > 0):

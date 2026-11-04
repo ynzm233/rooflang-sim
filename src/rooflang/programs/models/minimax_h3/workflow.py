@@ -8,6 +8,7 @@ from rooflang.language.hardware.component import Compute
 from rooflang.programs.experiments.simulation import simulate
 from rooflang.programs.experiments.workflow import Workflow
 from rooflang.runtime.stages import GraphResult, StageResult
+from rooflang.runtime.efficiency import prepare_hardware, resolve_efficiency
 from .config import MiniMaxH3MultimodalConfig
 from .bridge import build_component, component_nodes, validate_transformer_fia_compute_efficiency
 from .qwen_fia import QwenVisionFIAParams, QwenTextFIAParams
@@ -22,6 +23,7 @@ def _load(name):
 
 def resolve_config(overrides):
     overrides=deepcopy(overrides)
+    efficiency = resolve_efficiency(overrides.pop('efficiency', None))
     attention_backend = overrides.pop('attention_backend', 'auto')
     if attention_backend not in ('auto', 'flash_attention'):
         raise ValueError('attention_backend must be auto or flash_attention')
@@ -81,6 +83,7 @@ def resolve_config(overrides):
     if type(sp) is not int or sp not in (1,2,4,8):
         raise ValueError('MiniMax-H3 SP must be one of 1,2,4,8')
     data=_load('workload.json')
+    data['efficiency'] = efficiency
     data['attention_backend'] = attention_backend
     if fia_efficiency is not None:
         data['transformer_fia_compute_efficiency'] = fia_efficiency
@@ -165,6 +168,8 @@ def create_workflow(hardware, config):
         read_bw, write_bw = fabric.dst_to_src_bandwidth_gbs, fabric.src_to_dst_bandwidth_gbs
         if not math.isfinite(read_bw) or read_bw <= 0 or not math.isclose(read_bw, write_bw):
             raise ValueError('MiniMax-H3 aggregate traffic requires equal positive HBM read/write bandwidth')
+    hardware = prepare_hardware(hardware, resolved['efficiency'])
+    devices=[n for n in hardware.nodes if isinstance(n,Compute) and n.kind=='gpu']
     transformer='transformer' if cfg.workflow=='fl2va' else 'transformer_ref'
     # component, label, sequence rows, updates, repeat count, distributed
     jobs={'qwen_vision_encode':[]}
@@ -432,4 +437,5 @@ def create_workflow(hardware, config):
                 'condition_vae_encode':'fp32', 'transformer_text_refiner':'bf16',
                 'transformer_denoise':'bf16', 'video_vae_decode':'mixed_fp16_fp32',
                 'audio_vae_decode':'fp32'})
-    return Workflow({name:partial(run_stage,name) for name in jobs}, metadata, summarize)
+    return Workflow({name:partial(run_stage,name) for name in jobs}, metadata, summarize,
+                    hardware=hardware)

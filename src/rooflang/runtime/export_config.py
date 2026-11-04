@@ -25,7 +25,8 @@ OPERATOR_FIELDS = (
 COMMON_OPERATOR_EXTENSIONS = (
     "tag_mask kv_storage_dtype kv_cache_read kv_cache_saved kv_cache_load "
     "overlapped_compute_ms overlapped_memory_ms resident_weight_bytes "
-    "cpu_flops cpu_flops_breakdown"
+    "cpu_flops cpu_flops_breakdown "
+    "memory_bytes_by_unit memory_efficiency_by_unit local_memory_efficiency memory_efficiency_basis"
 ).split()
 
 STAGE_FIELDS = (
@@ -55,7 +56,8 @@ LLM_MODELS = frozenset(("dsv4_pro", "dsv4_flash", "glm_5_2_fp8", "kimi_k3"))
 MAGI_OPERATOR_EXTENSIONS = (
     "module layer_idx block_id semantic assumption source_compute_dtype "
     "component rank_scope memory_model parent_node_name subcall subcall_index "
-    "traffic_scope source_weight_saved recipe_node_index graph_node_index"
+    "traffic_scope source_weight_saved recipe_node_index graph_node_index "
+    "compute_peak_basis compute_effective_tflops_by_unit"
 ).split()
 
 MAGI_PLAN_EXTENSIONS = (
@@ -67,7 +69,7 @@ MAGI_PLAN_EXTENSIONS = (
     "compute_scope timing_status end_to_end_timing_complete timing_backend "
     "memory_status capacity_verdict_is_provisional preview_forward_count "
     "refiner_forward_count all_resident_memory_bytes fits_all_resident_memory "
-    "memory_accounting operator_graph_stages operator_graph_multipliers"
+    "memory_accounting operator_graph_stages operator_graph_multipliers compute_peak_basis"
 ).split()
 
 MODEL_EXTENSIONS = {

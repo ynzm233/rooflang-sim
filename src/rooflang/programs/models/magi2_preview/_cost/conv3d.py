@@ -30,10 +30,18 @@ class Conv3dParams(OperatorParams):
     has_bias: bool = field(default=False, metadata={"desc": "是否计入输出偏置"})
 
     def __post_init__(self):
+        self.validate()
         # compute output dimensions
         self.d_out = (self.d_in + 2 * self.pad_t - (self.kernel_t - 1) - 1) // self.stride_t + 1
         self.h_out = (self.h_in + 2 * self.pad_h - (self.kernel_h - 1) - 1) // self.stride_h + 1
         self.w_out = (self.w_in + 2 * self.pad_w - (self.kernel_w - 1) - 1) // self.stride_w + 1
+        if min(self.d_out, self.h_out, self.w_out) <= 0:
+            raise ValueError("Conv3d output dimensions must be positive")
+
+    def validate(self):
+        super().validate()
+        if self.c_in % self.groups or self.c_out % self.groups:
+            raise ValueError("Conv3d channels must be divisible by groups")
 
 
 @Registry.register_operator("conv3d", op_type=OpType.COMPUTE)

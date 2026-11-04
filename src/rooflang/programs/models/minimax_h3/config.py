@@ -21,12 +21,22 @@ class Ref2VAReference:
         kind = str(data["kind"])
         if kind not in ("image", "video", "audio"):
             raise ValueError(f"unsupported Ref2VA reference kind: {kind}")
+        geometry = {
+            "frames": data.get("frames", 1 if kind == "image" else 0),
+            "height": data.get("height", 0),
+            "width": data.get("width", 0),
+        }
+        for name, value in geometry.items():
+            if type(value) is not int:
+                raise ValueError(f"Ref2VA reference {name} must be an integer")
+        audio_seconds = data.get("audio_seconds", 0.0)
+        if (type(audio_seconds) not in (int, float)
+                or not math.isfinite(audio_seconds) or audio_seconds < 0):
+            raise ValueError("Ref2VA reference audio_seconds must be finite and nonnegative")
         return cls(
             kind=kind,
-            frames=int(data.get("frames", 1 if kind == "image" else 0)),
-            height=int(data.get("height", 0)),
-            width=int(data.get("width", 0)),
-            audio_seconds=float(data.get("audio_seconds", 0.0)),
+            **geometry,
+            audio_seconds=float(audio_seconds),
         )
 
     @property

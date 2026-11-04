@@ -1,6 +1,14 @@
 {
   "architecture_sha256": "255763b5321f03641eae3272cdcce043672a5fda69d53d7e94ff081b3967dab4",
   "config": {
+    "efficiency": {
+      "cube_efficiency": 1.0,
+      "vector_efficiency": 1.0,
+      "cube_memory_efficiency": 1.0,
+      "vector_memory_efficiency": 1.0,
+      "intra_node_efficiency": 1.0,
+      "collective_efficiencies": {}
+    },
     "assume_stage_unload": true,
     "attention_softmax_compute_multiplier": 1.0,
     "cp_size": 8,
@@ -37,6 +45,7 @@
     "name": "B300Cluster"
   },
   "metadata": {
+    "compute_peak_basis": "hardware_dtype_peak_with_unit_efficiency",
     "all_resident_memory_bytes": 86250212312,
     "batch_size": 1,
     "capacity_verdict_is_provisional": true,

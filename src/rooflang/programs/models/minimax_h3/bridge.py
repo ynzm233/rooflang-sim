@@ -13,6 +13,7 @@ from rooflang.programs.models.magi2_preview.operators import (
     FlashAttentionOperator, NpuFusedInferAttentionScoreOperator,
 )
 from rooflang.programs.presets.ascend910b import Ascend910B3
+from rooflang.runtime.efficiency import apply_memory_efficiency as _set_memory_efficiency, resolve_efficiency
 from .compat import BlockFactory, Parallel, OpType, QuantConfig
 from .offload import apply_layerwise_offload
 from .decode_ops import DecodeOperator
@@ -50,31 +51,6 @@ class H3Kernel(AnalyticalKernel):
                     c.get_unit_dtype('vector') + ':vector': c.vector_flops}
         return {c.dtype + ':' + c.unit_type: c.flops}
 
-
-def _set_memory_efficiency(kernel, hardware):
-    """Apply B3 unit efficiencies to time, preserving physical traffic bytes."""
-    if not isinstance(hardware, Ascend910B3):
-        return
-    op = kernel.operator
-    component = op.get_compute_component()
-    if isinstance(op, NpuFusedInferAttentionScoreOperator):
-        by_unit = op.get_memory_bytes_by_unit()
-        basis = 'single_pass_qkv_cube_output_mask_lse_vector'
-    else:
-        # Generic mixed recipes expose no per-unit traffic. Keep their fused
-        # boundary on cube; never infer a byte split from the FLOP ratio.
-        unit = 'vector' if component is None or component.unit_type in ('vector', 'storage') else 'cube'
-        by_unit = {unit: op.get_memory_bytes()}
-        basis = 'operator_unit_or_cube_for_generic_mixed_boundary'
-    assumptions = hardware.metadata['simulation_assumptions']
-    efficiencies = {unit: assumptions[f'{unit}_memory_efficiency'] for unit in by_unit}
-    total = sum(by_unit.values())
-    weighted = sum(size / efficiencies[unit] for unit, size in by_unit.items())
-    kernel.local_memory_efficiency = total / weighted if weighted else 1.0
-    kernel.csv_metadata.update(memory_bytes_by_unit=by_unit,
-                               memory_efficiency_by_unit=efficiencies,
-                               local_memory_efficiency=kernel.local_memory_efficiency,
-                               memory_efficiency_basis=basis)
 
 class H3Collective(CommKernel):
     """Source all-to-all bytes, timed on the hardware's aggregate fabric."""
@@ -244,7 +220,7 @@ def build_component(component, architecture, mm, seq_len, hardware, sp=1):
                     and component in ('transformer', 'transformer_ref')):
                 # Start from physical peaks so the global compute efficiencies are replaced once.
                 derived = hardware.metadata['derived_specification']
-                assumptions = hardware.metadata['simulation_assumptions']
+                efficiency = hardware.metadata.get('efficiency', resolve_efficiency(None))
                 kernel._compute_tflops_override = {}
                 for dtype_unit in kernel.flops_by_dtype:
                     dtype, unit = dtype_unit.split(':')
@@ -252,7 +228,7 @@ def build_component(component, architecture, mm, seq_len, hardware, sp=1):
                 kernel.csv_metadata.update(
                     transformer_fia_compute_efficiency=fia_efficiency,
                     compute_efficiency_by_unit={unit: fia_efficiency for unit in ('cube', 'vector')},
-                    hardware_compute_efficiency_by_unit={unit: assumptions[f'{unit}_efficiency']
+                    hardware_compute_efficiency_by_unit={unit: efficiency[f'{unit}_efficiency']
                                                          for unit in ('cube', 'vector')},
                     effective_compute_tflops_by_dtype=dict(kernel._compute_tflops_override),
                     compute_efficiency_basis='transformer_fia_absolute_override')

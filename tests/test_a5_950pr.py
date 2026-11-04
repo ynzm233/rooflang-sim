@@ -10,8 +10,20 @@ from rooflang.language.placement import Placement
 from rooflang.language.tensor import Tensor
 from rooflang.programs.models.minimax_h3.bridge import H3Collective
 from rooflang.programs.models.minimax_h3.hardware import A5PRServer
+from rooflang.runtime.efficiency import prepare_hardware, resolve_efficiency
 from rooflang.runtime.reproducibility import config_snapshot
 from rooflang.runtime.simulator import Bound, OOMError, Simulator
+
+
+LEGACY_EFFICIENCY = {
+    'cube_efficiency': 0.7, 'vector_efficiency': 0.6,
+    'intra_node_efficiency': 0.7,
+    'collective_efficiencies': {2: 0.142857, 4: 0.428571, 8: 1.0},
+}
+
+
+def configured_hardware(n_devices=1):
+    return prepare_hardware(A5PRServer(n_devices), resolve_efficiency(LEGACY_EFFICIENCY))
 
 
 class ComputeSegments(Kernel):
@@ -45,7 +57,7 @@ def run_single(hardware, kernel):
     ({'fp8:cube': 605_500_000}, 1.0),
 ])
 def test_official_compute_peaks_drive_simulated_cost(segments, expected_us):
-    result = run_single(A5PRServer(1), ComputeSegments(segments))
+    result = run_single(configured_hardware(), ComputeSegments(segments))
     assert result.total_time_us == pytest.approx(expected_us)
     assert result.trace[0].compute_time_us == pytest.approx(expected_us)
     assert result.trace[0].bound is Bound.COMPUTE
@@ -84,7 +96,7 @@ def test_capacity_boundary_is_128_decimal_gb():
 
 
 def test_h3_collective_retains_assumed_bandwidth_and_latency():
-    hardware = A5PRServer(4)
+    hardware = configured_hardware(4)
     collective = H3Collective(payload=1_568_000, world=4)
     graph = ComputeGraph()
     graph.add_kernel(collective)
@@ -105,7 +117,7 @@ def test_h3_collective_retains_assumed_bandwidth_and_latency():
 
 
 def test_saved_configuration_distinguishes_specifications_and_assumptions():
-    hardware = A5PRServer(1)
+    hardware = configured_hardware()
     snapshot = config_snapshot(
         SimpleNamespace(metadata={}), model_name='MiniMax-H3',
         hardware_name='A5_pr_server', stage=None, config={}, hardware=hardware,
@@ -117,9 +129,11 @@ def test_saved_configuration_distinguishes_specifications_and_assumptions():
     assert official['cube_tflops'] == {'fp16': 432.0, 'fp8': 865.0}
     assert official['vector_tflops'] == {'fp16': 54.0}
     assert official['source_url'].startswith('https://public-download.')
-    assert assumed['cube_efficiency'] == 0.7
+    assert 'cube_efficiency' not in assumed
+    assert saved['efficiency']['cube_efficiency'] == 0.7
     assert assumed['intra_node_latency_us'] == 1.0
-    assert assumed['collective_efficiencies']['4'] == 0.428571
+    assert 'collective_efficiencies' not in assumed
+    assert saved['efficiency']['collective_efficiencies']['4'] == 0.428571
     # Exported evidence must remain independent of later hardware edits.
-    snapshot['hardware']['metadata']['simulation_assumptions']['cube_efficiency'] = 1.0
-    assert hardware.metadata['simulation_assumptions']['cube_efficiency'] == 0.7
+    snapshot['hardware']['metadata']['efficiency']['cube_efficiency'] = 1.0
+    assert hardware.metadata['efficiency']['cube_efficiency'] == 0.7

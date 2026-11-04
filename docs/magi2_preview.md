@@ -131,3 +131,7 @@ Default I2V/T2V baseline checks include memory traffic, resident weights,
 activation proxies, invocation counts and CPU FLOPs. Accelerator FLOPs and
 timing are checked with floating-point summation tolerance. Each check runs the
 native simulator before comparing its results with the frozen baseline.
+
+## 模型效率接口
+
+`efficiency` 使用[公共字段、默认值与迁移规则](efficiency.md)。MAGI 保留原有按 dtype 的统一峰值基准，分别应用 Cube/Vector 系数；不因选择 NPU 就把已有 Vector FLOPs 改按该硬件专用 Vector 峰值计时。混合算子无单元流量拆分时整体使用 Cube 访存效率。随附 B300 示例显式填写 `1.0`，其工作量与基线保持不变；实际系数与计算基准随配置快照和算子元数据导出。

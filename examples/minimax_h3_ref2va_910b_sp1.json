@@ -36,5 +36,13 @@
     "source_script_sha256": "73ea0e5cc94440b2e8955dc0703a07e3c691d62967c481f5d9b3e92391fc882a",
     "prompt_sha256": "11f126106c4a2b129649b0051456055d4530d67988e6bf4feaf072350db4cb0b",
     "tokenization_evidence": "src/rooflang/programs/models/minimax_h3/requests/ref2va_official_d21241f.provenance.json"
+  },
+  "efficiency": {
+    "cube_efficiency": 0.8,
+    "vector_efficiency": 0.6,
+    "cube_memory_efficiency": 0.8,
+    "vector_memory_efficiency": 0.6,
+    "intra_node_efficiency": 1.0,
+    "collective_efficiencies": {}
   }
 }

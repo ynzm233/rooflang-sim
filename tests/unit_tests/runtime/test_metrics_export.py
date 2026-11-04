@@ -54,6 +54,19 @@ def _rows(path):
         return list(csv.DictReader(file))
 
 
+@pytest.mark.parametrize("label", ["C:outside", "C:"])
+@pytest.mark.parametrize("label_kind", ["model", "stage"])
+def test_drive_relative_labels_are_rejected_before_creating_output(tmp_path, label, label_kind):
+    output = tmp_path / "report"
+    model_name = label if label_kind == "model" else "toy"
+    stage_name = label if label_kind == "stage" else "forward"
+    with pytest.raises(ValueError, match="filename-safe"):
+        export_metrics({stage_name: SimulationResult([], 0, {})}, output,
+                       model_name=model_name)
+    assert not output.exists()
+    assert not list(tmp_path.iterdir())
+
+
 def test_semantic_stage_filenames_follow_model_and_emit_only_csv(tmp_path):
     names = ["text_encode", "image_vae_encode", "preview_denoise",
              "refiner_denoise", "video_vae_decode", "audio_vae_decode"]

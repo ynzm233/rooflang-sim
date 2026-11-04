@@ -4,3 +4,4 @@ recursive-include examples *.py *.json
 recursive-include scripts *.py
 recursive-include baselines *.json *.csv *.md *.yaml
 recursive-include tests *.py
+recursive-include tests/fixtures *.json

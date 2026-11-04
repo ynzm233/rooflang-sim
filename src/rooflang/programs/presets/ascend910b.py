@@ -45,10 +45,6 @@ DERIVED_SPEC = {
 # Host links model ideal independent per-device bandwidth, not a measured PCIe
 # configuration. The hardware preset does not imply that host compute is timed.
 SIMULATION_ASSUMPTIONS = {
-    "cube_efficiency": 0.8,
-    "vector_efficiency": 0.6,
-    "cube_memory_efficiency": 0.8,
-    "vector_memory_efficiency": 0.6,
     # Keep physical HBM and DMA bandwidth separate from operator utilization.
     # Model bridges apply the unit-specific values to each kernel's local time.
     "memory_efficiency": 1.0,
@@ -71,7 +67,6 @@ SIMULATION_ASSUMPTIONS = {
     "intra_node_bandwidth_basis": "assume 56 GB/s bidirectional total, 28 GB/s per direction",
     "intra_node_source_url": "https://arxiv.org/html/2605.22428v1#S6.SS1",
     "intra_node_source_scope": "paper names 910B4; applying its link rate to B3 is an assumption",
-    "intra_node_efficiency": 1.0,
     "intra_node_latency_us": 0.0,
     "host_memory_capacity_gib": 1536.0,
     "host_memory_capacity_gb": 1536 * 1024**3 / 1e9,
@@ -86,7 +81,7 @@ SIMULATION_ASSUMPTIONS = {
     "dma_basis": "one independent transfer engine per NPU for copy/compute overlap",
     "dma_hbm_bandwidth_basis": "independent 1600 GB/s HBM write/read edge; no shared HBM contention",
     "dma_transfer_scope": "critical-rank transfers; host root-complex contention not modeled",
-    "calibration": "uncalibrated user-specified efficiencies: Cube compute 0.8, Vector compute 0.6, Cube HBM 0.8, Vector HBM 0.6; no measured latency calibration",
+    "calibration": "physical peaks; model configuration supplies utilization; no measured latency calibration",
 }
 
 
@@ -108,9 +103,9 @@ class Ascend910B3(HardwareGraph):
         assumptions = self.metadata["simulation_assumptions"]
         tflops = {}
         for dtype, peak in derived["cube_tflops"].items():
-            tflops[dtype] = tflops[f"{dtype}:cube"] = peak * assumptions["cube_efficiency"]
+            tflops[dtype] = tflops[f"{dtype}:cube"] = peak
         for dtype, peak in derived["vector_tflops"].items():
-            tflops[f"{dtype}:vector"] = peak * assumptions["vector_efficiency"]
+            tflops[f"{dtype}:vector"] = peak
         self.host_memory = Memory(
             name="host-dram", kind="dram",
             capacity_gb=assumptions["host_memory_capacity_gb"],
@@ -152,8 +147,7 @@ class Ascend910B3(HardwareGraph):
         self.devices = tuple(devices)
         self.dma_devices = tuple(dma_devices)
         if n_devices == 2:
-            bandwidth = (assumptions["intra_node_bandwidth_gbs"]
-                         * assumptions["intra_node_efficiency"])
+            bandwidth = assumptions["intra_node_bandwidth_gbs"]
             self.add_edge(FabricEdge(
                 name="hccs", src=devices[0], dst=devices[1],
                 src_to_dst_bandwidth_gbs=bandwidth,

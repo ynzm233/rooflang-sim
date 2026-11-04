@@ -249,7 +249,8 @@ the rate cells blank, without fabricating zero throughput.
 """
     # Labels become filenames; validate them before creating any output.
     for label in (model_name, *stages):
-        if not label or label in (".", "..") or "/" in label or "\\" in label:
+        if (not label or label in (".", "..")
+                or "/" in label or "\\" in label or ":" in label):
             raise ValueError(f"Expected a filename-safe model/stage name: {label!r}")
     reserved = {"stage_metrics", f"{model_name}_plan_metrics"}
     if reserved.intersection(stages):
